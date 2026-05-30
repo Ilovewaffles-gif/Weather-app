@@ -1225,8 +1225,8 @@ function AlertsPanel(props){
   }
 
   // ── EmailJS config ── replace these 4 values after setup at emailjs.com
-  var EMAILJS_PUBLIC_KEY  = "ZO-JC10phG-rw3AhS";
-  var EMAILJS_TEMPLATE_ID = "template_cehc0tp";
+  var EMAILJS_PUBLIC_KEY  = "YOUR_EMAILJS_PUBLIC_KEY";
+  var EMAILJS_TEMPLATE_ID = "template_weather_alerts";
   var EMAILJS_GMAIL_SVC   = "service_gmail";
   var EMAILJS_ICLOUD_SVC  = "service_icloud";
 
@@ -1699,6 +1699,10 @@ function App(){
       {iShowSettings&&<UserSettingsPanel user={iUser} units={u} setUnits={setUnits} alertPrefs={iAlertPrefs} setAlertPrefs={setAlertPrefs} onClose={function(){setShowSettings(false);}} onOpenAuth={function(){setShowAuth(true);}}/>}
       {iShowShare&&<ShareCardModal forecastData={iFd} locationName={iLn} u={u} onClose={function(){setShowShare(false);}}/>}
       <div style={wrapSty}>
+        {/* ── Logo bar ── */}
+        <div style={{display:"flex",alignItems:"center",marginBottom:14}}>
+          <img src="logo.png" alt="The Weather Centre" style={{height:44,width:"auto",objectFit:"contain"}}/>
+        </div>
         <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
           <NavDropdown activePage={iAp} setActivePage={setAp}/>
           <div ref={searchRef} style={{flex:1,minWidth:120,position:"relative"}}>
