@@ -3241,7 +3241,7 @@ function FarmingDashboard(props){
               desc="Reference evapotranspiration. Compare to rainfall to estimate soil moisture deficit."/>
             <FarmMetricCard icon="🌱" label="GROWING DEG. DAYS" value={gdd.toFixed(1)} unit="GDD"
               color="#88cc66"
-              sub={"Base "+GDD_BASE[iFarm]+"°C · Accumulated: "+gddByDay[iDayIdx]?.accum+"°C"}
+              sub={"Base "+GDD_BASE[iFarm]+"°C · Accumulated: "+(gddByDay[iDayIdx]?gddByDay[iDayIdx].accum:"—")+"°C"}
               desc="Heat units accumulated today. Tracks crop development stage."/>
             <FarmMetricCard icon="🌧️" label="SOIL WATER" value={day.rainMm>=10?"Saturated":day.rainMm>=5?"Wet":day.rainMm>=2?"Moist":"Dry"} unit=""
               color={day.rainMm>=10?"#ff4400":day.rainMm>=5?"#ff8800":day.rainMm>=2?"#4a9fd4":"#ffcc00"}
@@ -3275,7 +3275,7 @@ function FarmingDashboard(props){
           <div style={{display:"flex",alignItems:"flex-end",gap:2,height:60,marginBottom:4}}>
             {gddByDay.map(function(g,i){
               var maxAccum=gddByDay[gddByDay.length-1].accum||1;
-              var ht=Math.round((g.gdd/(Math.max(...gddByDay.map(function(x){return x.gdd;}))||1))*52)+4;
+              var ht=Math.round((g.gdd/(gddByDay.reduce(function(a,b){return a>b.gdd?a:b.gdd;},0)||1))*52)+4;
               return <div key={i} title={g.date+": "+g.gdd+"GDD (total: "+g.accum+")"} style={{flex:1,height:ht+"px",background:"rgba(136,204,102,"+(0.3+Math.min(g.gdd/10,0.7))+")",borderRadius:"2px 2px 0 0",minHeight:2}}/>;
             })}
           </div>
@@ -3371,7 +3371,7 @@ function FarmingDashboard(props){
       {iTab==="calendar"&&(
         <div>
           <div style={{fontSize:11,color:"#555",marginBottom:12}}>
-            Seasonal recommendations for {FARM_TYPES.find(function(f){return f.id===iFarm;})?.label} — {new Date().toLocaleString("en-GB",{month:"long",year:"numeric"})}
+            Seasonal recommendations for {(FARM_TYPES.find(function(f){return f.id===iFarm;})||{label:iFarm}).label} — {new Date().toLocaleString("en-GB",{month:"long",year:"numeric"})}
           </div>
           {currentCal.length===0&&(
             <div style={{textAlign:"center",padding:"24px",color:"#555",fontSize:12}}>No specific calendar tasks for this month for {iFarm} farming. Check the Operations tab for daily go/no-go assessments.</div>
