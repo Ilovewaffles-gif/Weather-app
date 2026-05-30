@@ -1865,7 +1865,9 @@ function SkewTChart(props){
 
 // ── Vertical Profile Table ────────────────────────────────────────────────────
 function VerticalTable(props){
-  var levels=props.levels;
+  var levels=props.levels,u=props.u||{temp:"C"};
+  function cvtT(c){ return u.temp==="F"?+(c*9/5+32).toFixed(1):+c.toFixed(1); }
+  function tUnit(){ return u.temp==="F"?"°F":"°C"; }
   var thSty={fontSize:10,color:"#666",padding:"5px 6px",textAlign:"center",borderBottom:"1px solid rgba(255,255,255,0.07)",letterSpacing:1};
   var tdSty={fontSize:11,color:"#e8dcc8",padding:"5px 6px",textAlign:"center",borderBottom:"1px solid rgba(255,255,255,0.04)"};
   return (
@@ -1874,8 +1876,8 @@ function VerticalTable(props){
         <thead>
           <tr>
             <th style={thSty}>hPa</th>
-            <th style={thSty}>T (°C)</th>
-            <th style={thSty}>Td (°C)</th>
+            <th style={thSty}>T ({tUnit()})</th>
+            <th style={thSty}>Td ({tUnit()})</th>
             <th style={thSty}>RH%</th>
             <th style={thSty}>Wind</th>
             <th style={thSty}>Wb (°C)</th>
@@ -1883,7 +1885,7 @@ function VerticalTable(props){
         </thead>
         <tbody>
           {levels.map(function(l,i){
-            var wb=l.T!=null&&l.Td!=null?wetBulb(l.T,l.Td,l.p).toFixed(1):"-";
+            var wb=l.T!=null&&l.Td!=null?cvtT(wetBulb(l.T,l.Td,l.p)):"-";
             var dirs=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
             var wdir=l.windDir!=null?dirs[Math.round(l.windDir/22.5)%16]+' '+Math.round(l.windSpd)+'kt':"-";
             var rhCol=l.rh>=80?"#88ccff":l.rh>=60?"#aaddff":l.rh>=40?"#cce8ff":"#9a8c7a";
@@ -1891,8 +1893,8 @@ function VerticalTable(props){
             return (
               <tr key={i} style={{background:i%2===0?"rgba(255,255,255,0.02)":"transparent"}}>
                 <td style={Object.assign({},tdSty,{color:"#ff9944",fontWeight:"bold"})}>{l.p}</td>
-                <td style={Object.assign({},tdSty,{color:tCol})}>{l.T!=null?l.T.toFixed(1):"-"}</td>
-                <td style={Object.assign({},tdSty,{color:"#44aaff"})}>{l.Td!=null?l.Td.toFixed(1):"-"}</td>
+                <td style={Object.assign({},tdSty,{color:tCol})}>{l.T!=null?cvtT(l.T):"-"}</td>
+                <td style={Object.assign({},tdSty,{color:"#44aaff"})}>{l.Td!=null?cvtT(l.Td):"-"}</td>
                 <td style={Object.assign({},tdSty,{color:rhCol})}>{l.rh!=null?Math.round(l.rh):"-"}</td>
                 <td style={Object.assign({},tdSty,{color:"#aaaaff"})}>{wdir}</td>
                 <td style={Object.assign({},tdSty,{color:"#88ddcc"})}>{wb}</td>
@@ -1907,7 +1909,11 @@ function VerticalTable(props){
 
 // ── Meteorology Dashboard ─────────────────────────────────────────────────────
 function MeteoDashboard(props){
-  var lat=props.lat,lon=props.lon,locationName=props.locationName,forecastData=props.forecastData;
+  var lat=props.lat,lon=props.lon,locationName=props.locationName,forecastData=props.forecastData,u=props.u||{temp:"C",speed:"mph"};
+  function cvtT(c){ return u.temp==="F"?+(c*9/5+32).toFixed(1):+c.toFixed(1); }
+  function tUnit(){ return u.temp==="F"?"°F":"°C"; }
+  function cvtSpd(ms){ return u.speed==="mph"?+(ms*0.621371).toFixed(1):u.speed==="ms"?+(ms*0.27778).toFixed(1):+ms.toFixed(1); }
+  function spdUnit(){ return u.speed||"mph"; }
   var data=useState(null);var iData=data[0];var setData=data[1];
   var loading=useState(true);var iLoading=loading[0];var setLoading=loading[1];
   var err=useState("");var iErr=err[0];var setErr=err[1];
@@ -2012,11 +2018,12 @@ function MeteoDashboard(props){
               color={iData.srh!=null?hColour(iData.srh):"#555"}
               sub={iData.srh!=null?(iData.srh>=450?"Extreme tornado risk":iData.srh>=300?"High tornado risk":iData.srh>=150?"Moderate risk":"Low risk"):"No data"}
               desc="0-1km SRH. ≥150 = supercells possible, ≥300 = tornado risk."/>
-            <MeteoGauge label="Wet Bulb (Sfc)" value={iData.wbSfc!=null?iData.wbSfc:"—"} unit="°C"
+            <MeteoGauge label="Wet Bulb (Sfc)" value={iData.wbSfc!=null?cvtT(parseFloat(iData.wbSfc)):"—"} unit={tUnit()}
               color={iData.wbSfc!=null?(parseFloat(iData.wbSfc)>=28?"#ff4400":parseFloat(iData.wbSfc)>=24?"#ff8800":parseFloat(iData.wbSfc)<0?"#88ccff":"#4adf88"):"#555"}
               sub={iData.wbSfc!=null?(parseFloat(iData.wbSfc)>=28?"Dangerous heat stress":parseFloat(iData.wbSfc)<0?"Below freezing":"Normal range"):"No data"}
               desc="Wet-bulb temperature at surface. Affects human heat stress and icing."/>
-            <MeteoGauge label="850hPa Temp" value={iData.levels.find(function(l){return l.p===850;})?iData.levels.find(function(l){return l.p===850;}).T!=null?iData.levels.find(function(l){return l.p===850;}).T.toFixed(1):"—":"—"} unit="°C"
+            <MeteoGauge label="850hPa Temp" value={(function(){var l=iData.levels.find(function(x){return x.p===850;});return l&&l.T!=null?cvtT(l.T):"—";})()}
+              unit={tUnit()}
               color={(function(){var l=iData.levels.find(function(x){return x.p===850;});if(!l||l.T==null)return"#555";return l.T>10?"#ff8844":l.T>0?"#ffcc44":l.T>-10?"#88bbff":"#cc88ff";})()}
               sub="~1500m altitude"
               desc="850hPa temperature. Key level for thunderstorm forecasting and warm-air advection."/>
@@ -2030,7 +2037,7 @@ function MeteoDashboard(props){
               var wdir=l.windDir!=null?dirs[Math.floor(l.windDir/30)%12]:"";
               return <div key={p} style={{background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"8px 10px",border:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{fontSize:10,color:"#555",marginBottom:3}}>{p}hPa</div>
-                <div style={{fontSize:13,color:"#e8dcc8"}}>{l.T!=null?l.T.toFixed(1)+"°C":"—"}</div>
+                <div style={{fontSize:13,color:"#e8dcc8"}}>{l.T!=null?cvtT(l.T)+tUnit():"—"}</div>
                 <div style={{fontSize:10,color:"#88aaff",marginTop:2}}>{l.windSpd!=null?wdir+" "+l.windSpd+"kt":"—"}</div>
                 <div style={{fontSize:10,color:"#44aaff",marginTop:1}}>RH: {l.rh!=null?Math.round(l.rh)+"%":"—"}</div>
               </div>;
@@ -2046,7 +2053,7 @@ function MeteoDashboard(props){
             <SkewTChart levels={iData.levels}/>
           </div>
           <div style={{fontSize:11,color:"#666",marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>Vertical Sounding Table</div>
-          <VerticalTable levels={iData.levels}/>
+          <VerticalTable levels={iData.levels} u={u}/>
         </div>
       )}
 
@@ -2069,6 +2076,307 @@ function MeteoDashboard(props){
             />
           </div>
           <div style={{fontSize:10,color:"#444",marginTop:6,textAlign:"center"}}>Powered by RainViewer — updates every 10 minutes</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Construction Dashboard ────────────────────────────────────────────────────
+var CONSTRUCTION_ACTIVITIES = [
+  {
+    id:"crane", icon:"🏗️", label:"Crane Operations",
+    standard:"BS EN 13001 / LOLER",
+    check:function(w){
+      var wind=w.windMph, gust=w.gustMph, vis=w.vis, lightning=w.lightning;
+      if(gust>=45) return{status:"stop",reason:"Gusts "+gust+"mph — immediate stop (limit: 45mph)",color:"#ff2200"};
+      if(wind>=38) return{status:"stop",reason:"Wind "+wind+"mph exceeds operating limit (38mph)",color:"#ff2200"};
+      if(lightning) return{status:"stop",reason:"Lightning risk — evacuate immediately",color:"#ff2200"};
+      if(vis<200) return{status:"delay",reason:"Visibility "+vis+"m — below safe operating minimum",color:"#ff8800"};
+      if(gust>=35) return{status:"caution",reason:"Gusts "+gust+"mph — approaching limit. Monitor closely",color:"#ffcc00"};
+      if(wind>=28) return{status:"caution",reason:"Wind "+wind+"mph — reduced load capacity applies",color:"#ffcc00"};
+      return{status:"go",reason:"Conditions within operating limits",color:"#44cc66"};
+    }
+  },
+  {
+    id:"concrete", icon:"🪨", label:"Concrete Pouring",
+    standard:"CIRIA C660 / ACI 306",
+    check:function(w){
+      if(w.lightning) return{status:"stop",reason:"Lightning risk — suspend immediately",color:"#ff2200"};
+      if(w.temp<=0) return{status:"stop",reason:"Temperature "+w.temp.toFixed(1)+"°C — concrete will freeze. Do not pour",color:"#ff2200"};
+      if(w.rainMm>=5) return{status:"stop",reason:"Heavy rain "+w.rainMm+"mm — washout risk",color:"#ff2200"};
+      if(w.windMph>=25) return{status:"delay",reason:"Wind "+w.windMph+"mph — rapid surface drying risk",color:"#ff8800"};
+      if(w.temp<=4) return{status:"delay",reason:"Temperature "+w.temp.toFixed(1)+"°C — frost risk. Insulate or delay",color:"#ff8800"};
+      if(w.temp>=32) return{status:"caution",reason:"High temp "+w.temp.toFixed(1)+"°C — accelerated set. Use retarder, shade & cure",color:"#ffcc00"};
+      if(w.rain>=50) return{status:"caution",reason:w.rain+"% rain probability — have plastic sheeting ready",color:"#ffcc00"};
+      if(w.temp<=7) return{status:"caution",reason:"Cool temp "+w.temp.toFixed(1)+"°C — use heated water, monitor cure",color:"#ffcc00"};
+      return{status:"go",reason:"Conditions suitable for concrete operations",color:"#44cc66"};
+    }
+  },
+  {
+    id:"roofing", icon:"🏠", label:"Roofing & Cladding",
+    standard:"NFRC / HSE HSG33",
+    check:function(w){
+      if(w.lightning) return{status:"stop",reason:"Lightning — evacuate roof immediately",color:"#ff2200"};
+      if(w.windMph>=28) return{status:"stop",reason:"Wind "+w.windMph+"mph — above safe roofing limit (28mph)",color:"#ff2200"};
+      if(w.rain>=1||w.rainMm>=1) return{status:"stop",reason:"Rain/wet surfaces — slip and fall risk",color:"#ff2200"};
+      if(w.temp<=-1) return{status:"stop",reason:"Ice/frost risk — roof surfaces dangerously slippery",color:"#ff2200"};
+      if(w.windMph>=20) return{status:"delay",reason:"Wind "+w.windMph+"mph — large sheet/panel work unsafe",color:"#ff8800"};
+      if(w.windMph>=15) return{status:"caution",reason:"Wind "+w.windMph+"mph — restrict large panels, safety lines required",color:"#ffcc00"};
+      if(w.temp>=35) return{status:"caution",reason:"Heat "+w.temp.toFixed(1)+"°C — bitumen work risk, worker heat stress",color:"#ffcc00"};
+      return{status:"go",reason:"Conditions suitable for roofing work",color:"#44cc66"};
+    }
+  },
+  {
+    id:"scaffolding", icon:"🔧", label:"Scaffolding Erection",
+    standard:"NASC TG20 / BS EN 12811",
+    check:function(w){
+      if(w.lightning) return{status:"stop",reason:"Lightning — evacuate scaffold immediately",color:"#ff2200"};
+      if(w.gustMph>=31) return{status:"stop",reason:"Gusts "+w.gustMph+"mph — erection/dismantling must stop",color:"#ff2200"};
+      if(w.windMph>=23) return{status:"stop",reason:"Wind "+w.windMph+"mph — above erection limit (23mph)",color:"#ff2200"};
+      if(w.rainMm>=3) return{status:"delay",reason:"Rain "+w.rainMm+"mm — slippery boards and tubes",color:"#ff8800"};
+      if(w.windMph>=18) return{status:"caution",reason:"Wind "+w.windMph+"mph — reduce lift size, extra tying required",color:"#ffcc00"};
+      if(w.temp<=-1) return{status:"caution",reason:"Frost risk — check boards for ice before use",color:"#ffcc00"};
+      return{status:"go",reason:"Conditions within NASC erection guidelines",color:"#44cc66"};
+    }
+  },
+  {
+    id:"excavation", icon:"⛏️", label:"Excavation & Groundworks",
+    standard:"HSE CIS69 / BS 6031",
+    check:function(w){
+      if(w.lightning) return{status:"stop",reason:"Lightning — evacuate excavations, risk of strike",color:"#ff2200"};
+      if(w.rainMm>=10) return{status:"stop",reason:"Heavy rain "+w.rainMm+"mm — slope collapse and flooding risk",color:"#ff2200"};
+      if(w.temp<=-3) return{status:"delay",reason:"Ground frost — excavation may be dangerous, check for heave",color:"#ff8800"};
+      if(w.rainMm>=5) return{status:"delay",reason:"Rain "+w.rainMm+"mm — trench wall stability at risk",color:"#ff8800"};
+      if(w.rain>=70) return{status:"caution",reason:w.rain+"% rain probability — prepare pumping, shore trenches",color:"#ffcc00"};
+      if(w.windMph>=30) return{status:"caution",reason:"Wind "+w.windMph+"mph — spoil heap instability risk",color:"#ffcc00"};
+      return{status:"go",reason:"Ground conditions acceptable for excavation",color:"#44cc66"};
+    }
+  },
+  {
+    id:"painting", icon:"🎨", label:"Painting & Surface Treatment",
+    standard:"SSPC / BS EN ISO 12944",
+    check:function(w){
+      if(w.rain>=1||w.rainMm>=0.5) return{status:"stop",reason:"Rain — coating will fail, surface contamination",color:"#ff2200"};
+      if(w.temp<=2) return{status:"stop",reason:"Temperature "+w.temp.toFixed(1)+"°C — below minimum application temp",color:"#ff2200"};
+      if(w.humidity>=90) return{status:"stop",reason:"Humidity "+w.humidity+"% — condensation risk, coating adhesion failure",color:"#ff2200"};
+      if(w.humidity>=85) return{status:"delay",reason:"Humidity "+w.humidity+"% — approaching dew point risk",color:"#ff8800"};
+      if(w.temp>=38) return{status:"delay",reason:"Temperature "+w.temp.toFixed(1)+"°C — too hot, solvent flash-off too rapid",color:"#ff8800"};
+      if(w.temp<=5) return{status:"caution",reason:"Cool temp "+w.temp.toFixed(1)+"°C — use slow-cure system, extend overcoat time",color:"#ffcc00"};
+      if(w.windMph>=20) return{status:"caution",reason:"Wind "+w.windMph+"mph — overspray/contamination risk for spray application",color:"#ffcc00"};
+      if(w.humidity>=75) return{status:"caution",reason:"Humidity "+w.humidity+"% — check dew point before applying",color:"#ffcc00"};
+      return{status:"go",reason:"Conditions suitable for painting & surface treatment",color:"#44cc66"};
+    }
+  }
+];
+
+function GoNoBadge(props){
+  var status=props.status,color=props.color;
+  var labels={go:"GO",caution:"CAUTION",delay:"DELAY",stop:"STOP"};
+  var bg={go:"rgba(68,204,102,0.15)",caution:"rgba(255,204,0,0.12)",delay:"rgba(255,136,0,0.12)",stop:"rgba(255,34,0,0.15)"};
+  return <span style={{padding:"3px 10px",borderRadius:20,border:"1px solid "+color,background:bg[status]||"transparent",color:color,fontSize:11,fontWeight:"bold",letterSpacing:1}}>{labels[status]||status.toUpperCase()}</span>;
+}
+
+function ActivityCard(props){
+  var act=props.activity,w=props.weather,u=props.u;
+  var result=act.check(w);
+  var open=useState(false);var iOpen=open[0];var setOpen=open[1];
+  return (
+    <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid",borderColor:result.color+"44",borderLeft:"3px solid "+result.color,borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={function(){setOpen(!iOpen);}}>
+        <span style={{fontSize:20}}>{act.icon}</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}}>{act.label}</div>
+          <div style={{fontSize:10,color:"#555",marginTop:1}}>{act.standard}</div>
+        </div>
+        <GoNoBadge status={result.status} color={result.color}/>
+        <span style={{color:"#555",fontSize:12,marginLeft:4}}>{iOpen?"▲":"▼"}</span>
+      </div>
+      {iOpen&&(
+        <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{fontSize:12,color:result.color,marginBottom:6}}>📋 {result.reason}</div>
+          <div style={{fontSize:10,color:"#555",lineHeight:1.6}}>Standard: {act.standard}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConstructionDashboard(props){
+  var lat=props.lat,lon=props.lon,locationName=props.locationName,forecastData=props.forecastData,u=props.u||{temp:"C",speed:"mph"};
+  var dayIdx=useState(0);var iDayIdx=dayIdx[0];var setDayIdx=dayIdx[1];
+  var tab=useState("gonogo");var iTab=tab[0];var setTab=tab[1];
+
+  function cvtT(c){ return u.temp==="F"?+(c*9/5+32).toFixed(1):+c; }
+  function tUnit(){ return u.temp==="F"?"°F":"°C"; }
+
+  // Build weather summary for each day
+  var days=forecastData||[];
+  if(!days.length) return null;
+  var day=days[Math.min(iDayIdx,days.length-1)];
+
+  // Derive lightning proxy: storm condition + CAPE-like (high temp + high humidity + rain)
+  var lightningRisk=day&&(day.condition.includes("⛈")||(day.temp>=22&&day.humidity>=70&&day.rain>=60));
+  // Visibility proxy from forecast data (use 5000m as default, low if fog/mist)
+  var visM=day&&(day.condition.includes("🌫")||day.condition.includes("fog"))?150:5000;
+
+  // Weather object for activity checks — always in °C / mph internally
+  var w=day?{
+    temp:day.temp, low:day.low, windMph:day.windMph, gustMph:day.gustMph,
+    rain:day.rain, rainMm:day.rainMm, humidity:day.humidity,
+    lightning:lightningRisk, vis:visM
+  }:{};
+
+  var allStatuses=CONSTRUCTION_ACTIVITIES.map(function(a){return a.check(w).status;});
+  var stopCount=allStatuses.filter(function(s){return s==="stop";}).length;
+  var delayCount=allStatuses.filter(function(s){return s==="delay";}).length;
+  var cautionCount=allStatuses.filter(function(s){return s==="caution";}).length;
+  var goCount=allStatuses.filter(function(s){return s==="go";}).length;
+
+  var sectionSty={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,160,0,0.2)",borderRadius:16,padding:"18px 16px",marginBottom:16};
+  var tabs=[{id:"gonogo",label:"Go/No-Go"},{id:"conditions",label:"Site Conditions"},{id:"forecast",label:"7-Day Planning"}];
+
+  return (
+    <div style={sectionSty}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+        <span style={{fontSize:20}}>🏗️</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,color:"#ffcc88",letterSpacing:2,textTransform:"uppercase"}}>Construction Dashboard</div>
+          <div style={{fontSize:10,color:"#555",marginTop:1}}>{locationName}</div>
+        </div>
+        {/* Summary badges */}
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {stopCount>0&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:12,background:"rgba(255,34,0,0.15)",color:"#ff4422",border:"1px solid rgba(255,34,0,0.3)"}}>{stopCount} STOP</span>}
+          {delayCount>0&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:12,background:"rgba(255,136,0,0.12)",color:"#ff8800",border:"1px solid rgba(255,136,0,0.3)"}}>{delayCount} DELAY</span>}
+          {cautionCount>0&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:12,background:"rgba(255,204,0,0.1)",color:"#ffcc00",border:"1px solid rgba(255,204,0,0.3)"}}>{cautionCount} CAUTION</span>}
+          {goCount>0&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:12,background:"rgba(68,204,102,0.1)",color:"#44cc66",border:"1px solid rgba(68,204,102,0.3)"}}>{goCount} GO</span>}
+        </div>
+      </div>
+
+      {/* Day selector */}
+      <div style={{display:"flex",gap:4,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+        {days.slice(0,7).map(function(d,i){
+          var on=iDayIdx===i;
+          var acts=CONSTRUCTION_ACTIVITIES.map(function(a){return a.check({temp:d.temp,low:d.low,windMph:d.windMph,gustMph:d.gustMph,rain:d.rain,rainMm:d.rainMm,humidity:d.humidity,lightning:(d.condition.includes("⛈")||(d.temp>=22&&d.humidity>=70&&d.rain>=60)),vis:d.condition.includes("🌫")?150:5000}).status;});
+          var worst=acts.includes("stop")?"#ff2200":acts.includes("delay")?"#ff8800":acts.includes("caution")?"#ffcc00":"#44cc66";
+          return <button key={i} onClick={function(){setDayIdx(i);}} style={{flex:"0 0 auto",padding:"6px 10px",borderRadius:10,border:"1px solid",borderColor:on?worst:"rgba(255,255,255,0.08)",background:on?"rgba(255,255,255,0.07)":"transparent",color:on?"#e8dcc8":"#666",fontSize:11,cursor:"pointer",minWidth:52,textAlign:"center"}}>
+            <div style={{fontSize:9,color:worst,marginBottom:2}}>●</div>
+            <div>{d.date.split(" ")[0]}</div>
+          </button>;
+        })}
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:14,overflowX:"auto"}}>
+        {tabs.map(function(t){var on=iTab===t.id;return <button key={t.id} onClick={function(){setTab(t.id);}} style={{padding:"7px 14px",background:"none",border:"none",borderBottom:on?"2px solid #ffcc88":"2px solid transparent",color:on?"#ffcc88":"#555",fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>{t.label}</button>;})}
+      </div>
+
+      {/* ── Go/No-Go Tab ── */}
+      {iTab==="gonogo"&&(
+        <div>
+          <div style={{fontSize:11,color:"#555",marginBottom:12}}>
+            {day.date} · {day.condition} · {cvtT(day.temp)}{tUnit()} · Wind {day.windMph}mph
+          </div>
+          {CONSTRUCTION_ACTIVITIES.map(function(act){
+            return <ActivityCard key={act.id} activity={act} weather={w} u={u}/>;
+          })}
+          <div style={{fontSize:10,color:"#444",marginTop:8,lineHeight:1.6,padding:"8px 12px",background:"rgba(255,255,255,0.02)",borderRadius:8}}>
+            ⚠️ These assessments are advisory only. Always consult a qualified site manager and refer to current HSE guidelines, manufacturer specifications, and local authority requirements before making operational decisions.
+          </div>
+        </div>
+      )}
+
+      {/* ── Site Conditions Tab ── */}
+      {iTab==="conditions"&&day&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            {/* Wind */}
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid "+(day.windMph>=38?"rgba(255,34,0,0.4)":day.windMph>=23?"rgba(255,136,0,0.3)":"rgba(255,255,255,0.07)")}}>
+              <div style={{fontSize:10,color:"#666",marginBottom:4,letterSpacing:1}}>💨 WIND</div>
+              <div style={{fontSize:20,color:"#aaaaff",fontWeight:"bold"}}>{day.windMph}<span style={{fontSize:11,marginLeft:2}}>mph</span></div>
+              <div style={{fontSize:10,color:"#888",marginTop:2}}>Gusts: {day.gustMph}mph</div>
+              <div style={{fontSize:10,color:day.windMph>=38?"#ff2200":day.windMph>=23?"#ff8800":day.windMph>=15?"#ffcc00":"#44cc66",marginTop:4}}>
+                {day.windMph>=38?"⛔ Crane/scaffold stop":day.windMph>=28?"⚠️ Roofing stop":day.windMph>=23?"⚠️ Scaffold limit":day.windMph>=15?"⚠️ Caution":""} Crane limit: 38mph
+              </div>
+            </div>
+            {/* Temperature */}
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid "+(day.temp<=0?"rgba(100,160,255,0.4)":day.temp>=35?"rgba(255,34,0,0.3)":"rgba(255,255,255,0.07)")}}>
+              <div style={{fontSize:10,color:"#666",marginBottom:4,letterSpacing:1}}>🌡️ TEMPERATURE</div>
+              <div style={{fontSize:20,color:day.temp<=0?"#88ccff":day.temp>=35?"#ff6644":"#e8dcc8",fontWeight:"bold"}}>{cvtT(day.temp)}<span style={{fontSize:11,marginLeft:2}}>{tUnit()}</span></div>
+              <div style={{fontSize:10,color:"#888",marginTop:2}}>Low: {cvtT(day.low)}{tUnit()}</div>
+              <div style={{fontSize:10,color:day.temp<=0?"#88ccff":day.temp>=35?"#ff6644":day.low<=2?"#ffcc00":"#44cc66",marginTop:4}}>
+                {day.temp<=0?"❄️ Frost — concrete/painting stop":day.low<=2?"⚠️ Overnight frost risk":day.temp>=35?"🔥 Heat stress risk":"✓ Temperature acceptable"}
+              </div>
+            </div>
+            {/* Rain */}
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid "+(day.rainMm>=5?"rgba(255,34,0,0.3)":day.rain>=50?"rgba(255,136,0,0.3)":"rgba(255,255,255,0.07)")}}>
+              <div style={{fontSize:10,color:"#666",marginBottom:4,letterSpacing:1}}>🌧️ PRECIPITATION</div>
+              <div style={{fontSize:20,color:"#4a9fd4",fontWeight:"bold"}}>{day.rainMm}<span style={{fontSize:11,marginLeft:2}}>mm</span></div>
+              <div style={{fontSize:10,color:"#888",marginTop:2}}>{day.rain}% probability · {day.rainHours||"—"}hrs</div>
+              <div style={{fontSize:10,color:day.rainMm>=10?"#ff2200":day.rainMm>=5?"#ff8800":day.rain>=50?"#ffcc00":"#44cc66",marginTop:4}}>
+                {day.rainMm>=10?"⛔ Heavy rain — concrete/excavation stop":day.rainMm>=5?"⚠️ Rain — painting/concrete delay":day.rain>=50?"⚠️ Rain likely — prepare covers":"✓ Precipitation low"}
+              </div>
+            </div>
+            {/* Humidity */}
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid "+(day.humidity>=90?"rgba(255,34,0,0.3)":day.humidity>=80?"rgba(255,136,0,0.3)":"rgba(255,255,255,0.07)")}}>
+              <div style={{fontSize:10,color:"#666",marginBottom:4,letterSpacing:1}}>💧 HUMIDITY</div>
+              <div style={{fontSize:20,color:"#88ddff",fontWeight:"bold"}}>{day.humidity}<span style={{fontSize:11,marginLeft:2}}>%</span></div>
+              <div style={{fontSize:10,color:"#888",marginTop:2}}>Painting limit: 85%</div>
+              <div style={{fontSize:10,color:day.humidity>=90?"#ff2200":day.humidity>=85?"#ff8800":day.humidity>=75?"#ffcc00":"#44cc66",marginTop:4}}>
+                {day.humidity>=90?"⛔ Painting/coating stop":day.humidity>=85?"⚠️ Near dew point — coating risk":day.humidity>=75?"⚠️ Check dew point":"✓ Humidity acceptable"}
+              </div>
+            </div>
+            {/* Lightning */}
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid "+(lightningRisk?"rgba(255,220,0,0.4)":"rgba(255,255,255,0.07)")}}>
+              <div style={{fontSize:10,color:"#666",marginBottom:4,letterSpacing:1}}>⚡ LIGHTNING RISK</div>
+              <div style={{fontSize:20,color:lightningRisk?"#ffdd00":"#44cc66",fontWeight:"bold"}}>{lightningRisk?"ELEVATED":"LOW"}</div>
+              <div style={{fontSize:10,color:"#888",marginTop:2}}>Evacuation threshold</div>
+              <div style={{fontSize:10,color:lightningRisk?"#ffdd00":"#44cc66",marginTop:4}}>
+                {lightningRisk?"⛔ Evacuate cranes, scaffold & roofs":"✓ No significant lightning risk"}
+              </div>
+            </div>
+            {/* UV / Heat Stress */}
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid "+(day.uvMax>=8?"rgba(255,80,0,0.4)":"rgba(255,255,255,0.07)")}}>
+              <div style={{fontSize:10,color:"#666",marginBottom:4,letterSpacing:1}}>☀️ UV / HEAT STRESS</div>
+              <div style={{fontSize:20,color:day.uvMax>=8?"#ff6600":day.uvMax>=6?"#ffaa00":"#88cc44",fontWeight:"bold"}}>{day.uvMax!=null?day.uvMax:"—"}<span style={{fontSize:11,marginLeft:2}}>UV</span></div>
+              <div style={{fontSize:10,color:"#888",marginTop:2}}>{day.temp>=28?"Heat stress risk":day.temp>=24?"Warm work conditions":"Normal"}</div>
+              <div style={{fontSize:10,color:day.uvMax>=8?"#ff6600":day.uvMax>=6?"#ffaa00":"#44cc66",marginTop:4}}>
+                {day.uvMax>=8?"⚠️ High UV — SPF50, head cover, water mandatory":day.uvMax>=6?"⚠️ Moderate UV — sun protection required":"✓ UV acceptable"}
+                {day.temp>=32?" · 🔥 Heat stress plan required":""}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 7-Day Planning Tab ── */}
+      {iTab==="forecast"&&(
+        <div>
+          <div style={{fontSize:11,color:"#555",marginBottom:12}}>Tap a day to see full go/no-go assessment</div>
+          {days.slice(0,7).map(function(d,i){
+            var dw={temp:d.temp,low:d.low,windMph:d.windMph,gustMph:d.gustMph,rain:d.rain,rainMm:d.rainMm,humidity:d.humidity,lightning:(d.condition.includes("⛈")||(d.temp>=22&&d.humidity>=70&&d.rain>=60)),vis:d.condition.includes("🌫")?150:5000};
+            var acts=CONSTRUCTION_ACTIVITIES.map(function(a){return a.check(dw);});
+            var worst=acts.find(function(a){return a.status==="stop";})||acts.find(function(a){return a.status==="delay";})||acts.find(function(a){return a.status==="caution";})||{status:"go",color:"#44cc66"};
+            var stopC=acts.filter(function(a){return a.status==="stop";}).length;
+            var delayC=acts.filter(function(a){return a.status==="delay";}).length;
+            return (
+              <div key={i} onClick={function(){setDayIdx(i);setTab("gonogo");}}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",marginBottom:6,background:iDayIdx===i?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)",cursor:"pointer"}}>
+                <div style={{width:3,height:36,borderRadius:2,background:worst.color,flexShrink:0}}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,color:"#e8dcc8"}}>{d.date}</div>
+                  <div style={{fontSize:10,color:"#666",marginTop:1}}>{d.condition} · {cvtT(d.temp)}{tUnit()} · {d.windMph}mph · {d.rain}% rain</div>
+                </div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  {stopC>0&&<span style={{fontSize:10,color:"#ff4422"}}>{stopC}✗</span>}
+                  {delayC>0&&<span style={{fontSize:10,color:"#ff8800"}}>{delayC}⚠</span>}
+                  <GoNoBadge status={worst.status} color={worst.color}/>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -2316,8 +2624,9 @@ function App(){
                 {[{col:"#ff7700",label:"Confirmed",solid:true},{col:"#4a9fd4",label:"Near-term",solid:false},{col:"#555",label:"Estimated",solid:false}].map(function(l,i){return <span key={i} style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:9,height:9,borderRadius:l.solid?2:"50%",background:l.col,display:"inline-block"}}/>{l.label}</span>;})}
               </div>
             </div>
-            {/* Meteorology Dashboard — auto-shown when role is active */}
+            {/* Role Dashboards — auto-shown when role is active */}
             {iRoles.includes("meteorology")&&<MeteoDashboard lat={iLat} lon={iLon} locationName={iLn} forecastData={iFd} u={u}/>}
+            {iRoles.includes("construction")&&<ConstructionDashboard lat={iLat} lon={iLon} locationName={iLn} forecastData={iFd} u={u}/>}
             {iAp==="overview"&&<WeatherOverview forecastData={iFd} locationName={iLn} u={u} hourlyRaw={iHr} lat={iLat} lon={iLon}/>}
             {iAp==="ten"&&<TenDayForecast forecastData={iFd} u={u}/>}
             {iAp==="hourly"&&<HourlyForecast forecastData={iFd} hourlyRaw={iHr} u={u}/>}
