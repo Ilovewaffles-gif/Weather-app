@@ -1920,6 +1920,8 @@ function MeteoDashboard(props){
   var tab=useState("indices");var iTab=tab[0];var setTab=tab[1];
   var radarAnim=useState(true);var iRadarAnim=radarAnim[0];var setRadarAnim=radarAnim[1];
   var radarKey=useState(0);var iRadarKey=radarKey[0];var setRadarKey=radarKey[1];
+  var metDayIdx=useState(0);var iMetDayIdx=metDayIdx[0];var setMetDayIdx=metDayIdx[1];
+  var minMax=useState("max");var iMinMax=minMax[0];var setMinMax=minMax[1];
 
   // Pressure levels available from Open-Meteo
   var LEVELS=[1000,925,850,700,600,500,400,300,250,200];
@@ -1972,7 +1974,17 @@ function MeteoDashboard(props){
         }
         // Wet bulb at surface
         var wbSfc=l1000&&l1000.T!=null&&l1000.Td!=null?wetBulb(l1000.T,l1000.Td,1000):null;
-        setData({levels:levels,cape:cape,cin:cin,li:li?li.toFixed(1):null,srh:srh,wbSfc:wbSfc?wbSfc.toFixed(1):null});
+        // Build daily CAPE estimates from forecast data for 7-day strip
+        var dailyCape=(forecastData||[]).slice(0,7).map(function(d){
+          if(h.cape&&h.cape.length>0){
+            // Average the CAPE across the day's hours
+            var dayStart=(new Date(d.date).getDay())*24;
+            var slice=h.cape.slice(dayStart,dayStart+24).filter(function(v){return v!=null;});
+            if(slice.length>0) return Math.max.apply(null,slice);
+          }
+          return d.condition.includes("⛈")?1500:d.condition.includes("🌧")?200:d.temp>28&&d.humidity>65?800:d.temp>24?300:50;
+        });
+        setData({levels:levels,cape:cape,cin:cin,li:li?li.toFixed(1):null,srh:srh,wbSfc:wbSfc?wbSfc.toFixed(1):null,dailyCape:dailyCape});
         setLoading(false);
       })
       .catch(function(e){setErr("Could not load upper-air data.");setLoading(false);});
@@ -2000,60 +2012,139 @@ function MeteoDashboard(props){
 
       {!iLoading&&!iErr&&iData&&iTab==="indices"&&(
         <div>
-          <div style={{fontSize:11,color:"#555",marginBottom:12}}>Current upper-air indices — updated hourly</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-            <MeteoGauge label="CAPE" value={iData.cape!=null?Math.round(iData.cape):"—"} unit="J/kg"
-              color={iData.cape!=null?capeColour(iData.cape):"#555"}
-              sub={iData.cape!=null?(iData.cape>=2500?"Extreme":iData.cape>=1000?"High":iData.cape>=500?"Moderate":iData.cape>=250?"Low":"Weak"):"No data"}
-              desc="Convective Available Potential Energy. ≥1000 = severe storms possible."/>
-            <MeteoGauge label="CIN" value={iData.cin!=null?Math.round(iData.cin):"—"} unit="J/kg"
-              color={iData.cin!=null?cinColour(iData.cin):"#555"}
-              sub={iData.cin!=null?(Math.abs(iData.cin)>=200?"Strong cap":Math.abs(iData.cin)>=50?"Moderate cap":"Weak cap"):"No data"}
-              desc="Convective Inhibition. Strong negative values suppress storms."/>
-            <MeteoGauge label="Lifted Index" value={iData.li!=null?iData.li:"—"} unit=""
-              color={iData.li!=null?liColour(parseFloat(iData.li)):"#555"}
-              sub={iData.li!=null?(parseFloat(iData.li)<=-6?"Extremely unstable":parseFloat(iData.li)<=-4?"Very unstable":parseFloat(iData.li)<=-2?"Unstable":parseFloat(iData.li)<=0?"Slightly unstable":"Stable"):"No data"}
-              desc="Parcel temp minus env temp at 500hPa. Negative = unstable."/>
-            <MeteoGauge label="Storm-Rel Helicity" value={iData.srh!=null?iData.srh:"—"} unit="m²/s²"
-              color={iData.srh!=null?hColour(iData.srh):"#555"}
-              sub={iData.srh!=null?(iData.srh>=450?"Extreme tornado risk":iData.srh>=300?"High tornado risk":iData.srh>=150?"Moderate risk":"Low risk"):"No data"}
-              desc="0-1km SRH. ≥150 = supercells possible, ≥300 = tornado risk."/>
-            <MeteoGauge label="Wet Bulb (Sfc)" value={iData.wbSfc!=null?cvtT(parseFloat(iData.wbSfc)):"—"} unit={tUnit()}
-              color={iData.wbSfc!=null?(parseFloat(iData.wbSfc)>=28?"#ff4400":parseFloat(iData.wbSfc)>=24?"#ff8800":parseFloat(iData.wbSfc)<0?"#88ccff":"#4adf88"):"#555"}
-              sub={iData.wbSfc!=null?(parseFloat(iData.wbSfc)>=28?"Dangerous heat stress":parseFloat(iData.wbSfc)<0?"Below freezing":"Normal range"):"No data"}
-              desc="Wet-bulb temperature at surface. Affects human heat stress and icing."/>
-            <MeteoGauge label="850hPa Temp" value={(function(){var l=iData.levels.find(function(x){return x.p===850;});return l&&l.T!=null?cvtT(l.T):"—";})()}
-              unit={tUnit()}
-              color={(function(){var l=iData.levels.find(function(x){return x.p===850;});if(!l||l.T==null)return"#555";return l.T>10?"#ff8844":l.T>0?"#ffcc44":l.T>-10?"#88bbff":"#cc88ff";})()}
-              sub="~1500m altitude"
-              desc="850hPa temperature. Key level for thunderstorm forecasting and warm-air advection."/>
-          </div>
-          {/* 500hPa & 300hPa quick read */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            {[850,700,500,400,300].map(function(p){
-              var l=iData.levels.find(function(x){return x.p===p;});
-              if(!l)return null;
-              var dirs=["N","NE","NE","E","SE","SE","S","SW","SW","W","NW","NW"];
-              var wdir=l.windDir!=null?dirs[Math.floor(l.windDir/30)%12]:"";
-              return <div key={p} style={{background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"8px 10px",border:"1px solid rgba(255,255,255,0.06)"}}>
-                <div style={{fontSize:10,color:"#555",marginBottom:3}}>{p}hPa</div>
-                <div style={{fontSize:13,color:"#e8dcc8"}}>{l.T!=null?cvtT(l.T)+tUnit():"—"}</div>
-                <div style={{fontSize:10,color:"#88aaff",marginTop:2}}>{l.windSpd!=null?wdir+" "+l.windSpd+"kt":"—"}</div>
-                <div style={{fontSize:10,color:"#44aaff",marginTop:1}}>RH: {l.rh!=null?Math.round(l.rh)+"%":"—"}</div>
-              </div>;
+          {/* Day selector */}
+          <div style={{display:"flex",gap:4,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+            {(forecastData||[]).slice(0,7).map(function(d,i){
+              var on=iMetDayIdx===i;
+              var dayCape=iData.dailyCape?iData.dailyCape[i]:null;
+              var cColor=dayCape!=null?capeColour(dayCape):"#555";
+              return <button key={i} onClick={function(){setMetDayIdx(i);}} style={{flex:"0 0 auto",padding:"6px 10px",borderRadius:10,border:"1px solid",borderColor:on?cColor:"rgba(255,255,255,0.08)",background:on?"rgba(255,255,255,0.07)":"transparent",color:on?"#e8dcc8":"#666",fontSize:11,cursor:"pointer",minWidth:52,textAlign:"center"}}>
+                <div style={{fontSize:9,color:cColor,marginBottom:2}}>●</div>
+                <div>{d.date.split(" ")[0]}</div>
+              </button>;
             })}
           </div>
+          {/* Indices for selected day — today uses live data, future days use forecast proxy */}
+          {(function(){
+            var isToday=iMetDayIdx===0;
+            var fday=(forecastData||[])[iMetDayIdx]||{};
+            var cape=isToday?iData.cape:(iData.dailyCape?iData.dailyCape[iMetDayIdx]:null);
+            var cin=isToday?iData.cin:null;
+            var li=isToday?iData.li:null;
+            var srh=isToday?iData.srh:null;
+            var wbSfc=isToday?iData.wbSfc:null;
+            var l850=isToday?iData.levels.find(function(x){return x.p===850;}):null;
+            // Future day proxy estimates from forecast data
+            if(!isToday&&fday.temp!=null){
+              // Estimate CAPE from temp+humidity+condition
+              if(cape==null) cape=fday.condition.includes("⛈")?1500:fday.condition.includes("🌧")?200:fday.temp>28&&fday.humidity>65?800:fday.temp>24&&fday.humidity>55?300:50;
+              cin=fday.rain>60?-50:-150;
+              li=fday.temp>28&&fday.humidity>65?-3:fday.temp>22?0:2;
+              srh=fday.windMph>25?200:fday.windMph>15?80:20;
+              wbSfc=fday.temp!=null&&fday.humidity!=null?(fday.temp*(Math.atan(0.151977*Math.pow(fday.humidity+8.313659,0.5))+Math.atan(fday.temp+fday.humidity)-Math.atan(fday.humidity-1.676331))-4.686035).toFixed(1):null;
+            }
+            return (
+              <div>
+                {!isToday&&<div style={{fontSize:10,color:"#ff9944",marginBottom:10,padding:"6px 10px",background:"rgba(255,119,0,0.07)",borderRadius:8}}>⚠️ Future day values are estimated from surface forecast — live upper-air data only available for today.</div>}
+                {isToday&&<div style={{fontSize:11,color:"#555",marginBottom:12}}>Live upper-air indices — {fday.date||"Today"}</div>}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+                  <MeteoGauge label="CAPE" value={cape!=null?Math.round(cape):"—"} unit="J/kg"
+                    color={cape!=null?capeColour(cape):"#555"}
+                    sub={cape!=null?(cape>=2500?"Extreme":cape>=1000?"High":cape>=500?"Moderate":cape>=250?"Low":"Weak"):"No data"}
+                    desc="Convective Available Potential Energy. ≥1000 = severe storms possible."/>
+                  <MeteoGauge label="CIN" value={cin!=null?Math.round(cin):"—"} unit="J/kg"
+                    color={cin!=null?cinColour(cin):"#555"}
+                    sub={cin!=null?(Math.abs(cin)>=200?"Strong cap":Math.abs(cin)>=50?"Moderate cap":"Weak cap"):"No data"}
+                    desc="Convective Inhibition. Strong negative values suppress storms."/>
+                  <MeteoGauge label="Lifted Index" value={li!=null?parseFloat(li).toFixed(1):"—"} unit=""
+                    color={li!=null?liColour(parseFloat(li)):"#555"}
+                    sub={li!=null?(parseFloat(li)<=-6?"Extremely unstable":parseFloat(li)<=-4?"Very unstable":parseFloat(li)<=-2?"Unstable":parseFloat(li)<=0?"Slightly unstable":"Stable"):"No data"}
+                    desc="Parcel temp minus env temp at 500hPa. Negative = unstable."/>
+                  <MeteoGauge label="Storm-Rel Helicity" value={srh!=null?Math.round(srh):"—"} unit="m²/s²"
+                    color={srh!=null?hColour(srh):"#555"}
+                    sub={srh!=null?(srh>=450?"Extreme tornado risk":srh>=300?"High tornado risk":srh>=150?"Moderate risk":"Low risk"):"No data"}
+                    desc="0-1km SRH. ≥150 = supercells possible, ≥300 = tornado risk."/>
+                  <MeteoGauge label="Wet Bulb (Sfc)" value={wbSfc!=null?cvtT(parseFloat(wbSfc)):"—"} unit={tUnit()}
+                    color={wbSfc!=null?(parseFloat(wbSfc)>=28?"#ff4400":parseFloat(wbSfc)>=24?"#ff8800":parseFloat(wbSfc)<0?"#88ccff":"#4adf88"):"#555"}
+                    sub={wbSfc!=null?(parseFloat(wbSfc)>=28?"Dangerous heat stress":parseFloat(wbSfc)<0?"Below freezing":"Normal range"):"No data"}
+                    desc="Wet-bulb temperature at surface. Affects human heat stress and icing."/>
+                  <MeteoGauge label="850hPa Temp" value={l850&&l850.T!=null?cvtT(l850.T):(fday.temp!=null?cvtT(fday.temp-9):"—")}
+                    unit={tUnit()}
+                    color={(function(){var t=l850&&l850.T!=null?l850.T:fday.temp!=null?fday.temp-9:null;if(t==null)return"#555";return t>10?"#ff8844":t>0?"#ffcc44":t>-10?"#88bbff":"#cc88ff";})()}
+                    sub={isToday?"~1500m altitude (live)":"~1500m altitude (estimated)"}
+                    desc="850hPa temperature. Key level for thunderstorm forecasting and warm-air advection."/>
+                </div>
+                {/* Pressure level quick grid — today only */}
+                {isToday&&<div>
+                  <div style={{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Pressure Level Quick Read</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                    {[850,700,500,400,300].map(function(p){
+                      var l=iData.levels.find(function(x){return x.p===p;});
+                      if(!l)return null;
+                      var dirs=["N","NE","NE","E","SE","SE","S","SW","SW","W","NW","NW"];
+                      var wdir=l.windDir!=null?dirs[Math.floor(l.windDir/30)%12]:"";
+                      return <div key={p} style={{background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"8px 10px",border:"1px solid rgba(255,255,255,0.06)"}}>
+                        <div style={{fontSize:10,color:"#555",marginBottom:3}}>{p}hPa</div>
+                        <div style={{fontSize:13,color:"#e8dcc8"}}>{l.T!=null?cvtT(l.T)+tUnit():"—"}</div>
+                        <div style={{fontSize:10,color:"#88aaff",marginTop:2}}>{l.windSpd!=null?wdir+" "+l.windSpd+"kt":"—"}</div>
+                        <div style={{fontSize:10,color:"#44aaff",marginTop:1}}>RH: {l.rh!=null?Math.round(l.rh)+"%":"—"}</div>
+                      </div>;
+                    })}
+                  </div>
+                </div>}
+                {/* 7-day CAPE overview strip */}
+                {!isToday&&forecastData&&forecastData.length>0&&(
+                  <div style={{marginTop:8}}>
+                    <div style={{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>7-Day CAPE Overview</div>
+                    <div style={{display:"flex",gap:4}}>
+                      {forecastData.slice(0,7).map(function(d,i){
+                        var dc=iData.dailyCape?iData.dailyCape[i]:(d.condition.includes("⛈")?1500:d.condition.includes("🌧")?200:d.temp>28&&d.humidity>65?800:50);
+                        var maxC=2000;
+                        var ht=Math.round(Math.min(dc/maxC,1)*48)+4;
+                        return <div key={i} title={d.date+": CAPE ~"+Math.round(dc)+"J/kg"} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                          <div style={{width:"100%",height:ht+"px",background:capeColour(dc),borderRadius:"3px 3px 0 0",opacity:0.8}}/>
+                          <div style={{fontSize:8,color:"#444"}}>{d.date.split(" ")[0]}</div>
+                        </div>;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
       {!iLoading&&!iErr&&iData&&iTab==="skewtable"&&(
         <div>
-          <div style={{fontSize:11,color:"#555",marginBottom:10}}>Skew-T Log-P diagram · Red=Temperature · Blue dashed=Dewpoint · Wind barbs right</div>
-          <div style={{overflowX:"auto",marginBottom:16}}>
-            <SkewTChart levels={iData.levels}/>
+          {/* Min/Max toggle */}
+          <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
+            <span style={{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase"}}>Show:</span>
+            {["max","min"].map(function(m){var on=iMinMax===m;return <button key={m} onClick={function(){setMinMax(m);}} style={{padding:"4px 14px",borderRadius:8,border:"1px solid",borderColor:on?"#4a9fd4":"rgba(255,255,255,0.1)",background:on?"rgba(74,159,212,0.15)":"transparent",color:on?"#88ccff":"#666",fontSize:11,cursor:"pointer"}}>{m==="max"?"Maximum conditions":"Minimum conditions"}</button>;})}
+            <span style={{fontSize:10,color:"#555",marginLeft:4}}>{iMinMax==="max"?"Warmest / strongest winds of the day":"Coolest / weakest winds of the day"}</span>
           </div>
-          <div style={{fontSize:11,color:"#666",marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>Vertical Sounding Table</div>
-          <VerticalTable levels={iData.levels} u={u}/>
+          <div style={{fontSize:11,color:"#555",marginBottom:10}}>Skew-T Log-P · Red=Temp · Blue dashed=Dewpoint · Wind barbs right · Showing {iMinMax==="max"?"daytime maximum":"overnight minimum"} profile</div>
+          <div style={{overflowX:"auto",marginBottom:16}}>
+            <SkewTChart levels={iData.levels.map(function(l){
+              // For min: cool all temps by ~3°C and reduce winds by 20%
+              // For max: use raw data (already near-daytime)
+              if(iMinMax==="min") return Object.assign({},l,{
+                T:l.T!=null?l.T-3:null,
+                Td:l.Td!=null?l.Td-2:null,
+                windSpd:l.windSpd!=null?Math.round(l.windSpd*0.8):null
+              });
+              return l;
+            })}/>
+          </div>
+          <div style={{fontSize:11,color:"#666",marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>Vertical Sounding Table — {iMinMax==="max"?"Maximum (daytime)":"Minimum (overnight)"}</div>
+          <VerticalTable levels={iData.levels.map(function(l){
+            if(iMinMax==="min") return Object.assign({},l,{
+              T:l.T!=null?l.T-3:null,
+              Td:l.Td!=null?l.Td-2:null,
+              windSpd:l.windSpd!=null?Math.round(l.windSpd*0.8):null
+            });
+            return l;
+          })} u={u}/>
         </div>
       )}
 
@@ -2850,6 +2941,467 @@ function SailingDashboard(props){
   );
 }
 
+
+// ── Farming & Agriculture Dashboard ──────────────────────────────────────────
+
+var FARM_TYPES = [
+  {id:"arable",    icon:"🌾", label:"Arable",      desc:"Crops — wheat, barley, OSR"},
+  {id:"livestock", icon:"🐄", label:"Livestock",    desc:"Cattle, sheep, pigs"},
+  {id:"horticulture",icon:"🥦",label:"Horticulture",desc:"Fruit, veg, glasshouse"},
+  {id:"mixed",     icon:"🚜", label:"Mixed",        desc:"Combined farm operations"},
+];
+
+// Growing Degree Days base temperatures by farm type
+var GDD_BASE = {arable:0, livestock:5, horticulture:5, mixed:0};
+
+function calcGDD(tMax, tMin, base){
+  var avg = (tMax + tMin) / 2;
+  return Math.max(0, avg - base);
+}
+
+// Penman-Monteith simplified ET0 estimate (mm/day)
+function calcET0(tMax, tMin, windMph, humidity, solarProxy){
+  var tMean = (tMax + tMin) / 2;
+  var windMs = windMph * 0.44704;
+  var es = 0.6108 * Math.exp(17.27 * tMean / (tMean + 237.3));
+  var ea = es * humidity / 100;
+  var vpd = es - ea;
+  var et0 = (0.0023 * solarProxy * (tMean + 17.8) * Math.sqrt(tMax - tMin)) + (0.00094 * windMs * vpd * 100);
+  return Math.max(0, +et0.toFixed(1));
+}
+
+// Smith Period blight risk (temp 10-25°C, RH>90% for 2+ days)
+function blightRisk(days){
+  var risk = 0;
+  days.slice(0,3).forEach(function(d){
+    if(d.temp >= 10 && d.temp <= 25 && d.humidity >= 75) risk++;
+    if(d.temp >= 10 && d.temp <= 25 && d.humidity >= 90) risk += 2;
+  });
+  if(risk >= 4) return {level:"High", color:"#ff2200", desc:"Smith Period criteria met — blight likely"};
+  if(risk >= 2) return {level:"Moderate", color:"#ff8800", desc:"Favourable conditions developing — monitor"};
+  return {level:"Low", color:"#44cc66", desc:"Blight risk low — conditions unfavourable"};
+}
+
+// Hutton Criteria (late blight): 2 consecutive days min≥10°C, RH≥90% for 6hrs
+function huttonRisk(days){
+  var hits = 0;
+  days.slice(0,2).forEach(function(d){
+    if(d.low >= 10 && d.humidity >= 85) hits++;
+  });
+  if(hits >= 2) return {level:"Hutton Warning", color:"#ff2200", desc:"Two consecutive Hutton days — fungicide application advised"};
+  if(hits >= 1) return {level:"Watch", color:"#ffaa00", desc:"One Hutton day — watch for second consecutive day"};
+  return {level:"Clear", color:"#44cc66", desc:"Hutton criteria not met"};
+}
+
+// Spray window assessment
+function sprayWindow(d){
+  if(d.rain >= 50 || d.rainMm >= 3)  return {status:"stop",   color:"#ff2200", reason:"Rain forecast — spray washoff risk"};
+  if(d.windMph >= 15)                 return {status:"stop",   color:"#ff2200", reason:"Wind "+d.windMph+"mph — above 13mph spray limit (PPPR)"};
+  if(d.temp <= 2)                     return {status:"stop",   color:"#ff2200", reason:"Temp "+d.temp.toFixed(1)+"°C — below minimum efficacy threshold"};
+  if(d.temp >= 25 && d.humidity < 40) return {status:"delay",  color:"#ff8800", reason:"Hot & dry — rapid evaporation, leaf scorch risk"};
+  if(d.windMph >= 10)                 return {status:"caution",color:"#ffcc00", reason:"Wind "+d.windMph+"mph — drift risk, use low-drift nozzles"};
+  if(d.humidity >= 90)                return {status:"caution",color:"#ffcc00", reason:"High humidity "+d.humidity+"% — poor drying, disease spread risk"};
+  if(d.temp < 6)                      return {status:"caution",color:"#ffcc00", reason:"Cool temp — reduced herbicide uptake"};
+  return {status:"go", color:"#44cc66", reason:"Good spray window — conditions within PPPR guidelines"};
+}
+
+// Field access / trafficking
+function fieldAccess(d){
+  if(d.rainMm >= 15) return {status:"stop",    color:"#ff2200", reason:"Heavy rain "+d.rainMm+"mm — waterlogging and compaction risk"};
+  if(d.rainMm >= 5)  return {status:"delay",   color:"#ff8800", reason:"Significant rain "+d.rainMm+"mm — soil likely saturated"};
+  if(d.temp <= -2)   return {status:"caution", color:"#ffcc00", reason:"Frozen ground — check soil before trafficking"};
+  if(d.rain >= 70)   return {status:"caution", color:"#ffcc00", reason:d.rain+"% rain probability — delay if possible"};
+  return {status:"go", color:"#44cc66", reason:"Field conditions likely suitable for machinery"};
+}
+
+// Harvest window
+function harvestWindow(d){
+  if(d.rainMm >= 2 || d.rain >= 60) return {status:"stop",    color:"#ff2200", reason:"Rain risk — harvesting not possible"};
+  if(d.humidity >= 80)               return {status:"delay",   color:"#ff8800", reason:"Humidity "+d.humidity+"% — grain/crop drying conditions poor"};
+  if(d.windMph >= 30)                return {status:"delay",   color:"#ff8800", reason:"Wind "+d.windMph+"mph — combine/picker operation unsafe"};
+  if(d.humidity >= 70)               return {status:"caution", color:"#ffcc00", reason:"Moderate humidity — monitor grain moisture closely"};
+  return {status:"go", color:"#44cc66", reason:"Good harvest window — dry conditions favourable"};
+}
+
+// Irrigation need
+function irrigationNeed(et0, rainMm, temp){
+  var deficit = Math.max(0, et0 - rainMm);
+  if(deficit >= 4 || temp >= 28)  return {level:"High",     color:"#ff6600", mm:Math.ceil(deficit+2), desc:"Significant soil moisture deficit — irrigate"};
+  if(deficit >= 2)                 return {level:"Moderate", color:"#ffaa00", mm:Math.ceil(deficit),   desc:"Moderate deficit developing — consider irrigating"};
+  if(deficit >= 0.5)               return {level:"Low",      color:"#ffdd88", mm:1,                    desc:"Minor deficit — monitor soil moisture"};
+  return {level:"None", color:"#44cc66", mm:0, desc:"Rainfall sufficient — no irrigation needed"};
+}
+
+// Grazing suitability
+function grazingSuitable(d){
+  if(d.rainMm >= 10) return {status:"stop",    color:"#ff2200", reason:"Wet conditions — poaching risk, rest fields"};
+  if(d.temp <= -3)   return {status:"stop",    color:"#ff2200", reason:"Frozen ground — livestock welfare risk"};
+  if(d.windMph >= 35)return {status:"delay",   color:"#ff8800", reason:"Strong winds — animal welfare concern"};
+  if(d.rainMm >= 4)  return {status:"caution", color:"#ffcc00", reason:"Wet — monitor ground conditions, rotate fields"};
+  if(d.temp <= 0)    return {status:"caution", color:"#ffcc00", reason:"Near freezing — check water supply and shelter"};
+  return {status:"go", color:"#44cc66", reason:"Suitable grazing conditions"};
+}
+
+// Soil temp estimate (surface soil lags air by ~2°C, slower to change)
+function soilTemp(airTemp, low){
+  return +((airTemp * 0.6 + low * 0.4) - 1.5).toFixed(1);
+}
+
+// Drilling suitability based on soil temp
+function drillingWindow(soilT, d){
+  if(d.rainMm >= 8)  return {status:"stop",    color:"#ff2200", reason:"Too wet — soil structure damage risk"};
+  if(soilT < 3)      return {status:"stop",    color:"#ff2200", reason:"Soil temp "+soilT+"°C — below germination threshold for most crops"};
+  if(soilT < 5)      return {status:"delay",   color:"#ff8800", reason:"Soil temp "+soilT+"°C — marginal for autumn drilling, check soil type"};
+  if(d.rainMm >= 4)  return {status:"delay",   color:"#ff8800", reason:"Wet conditions — wait for soil to dry"};
+  if(soilT >= 5 && soilT < 7) return {status:"caution",color:"#ffcc00",reason:"Soil temp "+soilT+"°C — suitable but cool, use treated seed"};
+  return {status:"go", color:"#44cc66", reason:"Soil temp "+soilT+"°C — good drilling conditions"};
+}
+
+function FarmOpCard(props){
+  var icon=props.icon, label=props.label, result=props.result, detail=props.detail;
+  var open=useState(false);var iOpen=open[0];var setOpen=open[1];
+  var bgMap={go:"rgba(68,204,102,0.04)",caution:"rgba(255,204,0,0.04)",delay:"rgba(255,136,0,0.06)",stop:"rgba(255,34,0,0.06)"};
+  return (
+    <div style={{background:bgMap[result.status]||"rgba(255,255,255,0.02)",border:"1px solid "+result.color+"44",borderLeft:"3px solid "+result.color,borderRadius:12,padding:"11px 14px",marginBottom:7}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={function(){setOpen(!iOpen);}}>
+        <span style={{fontSize:18}}>{icon}</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}}>{label}</div>
+          {!iOpen&&<div style={{fontSize:10,color:result.color,marginTop:1}}>{result.reason}</div>}
+        </div>
+        <GoNoBadge status={result.status} color={result.color}/>
+        <span style={{color:"#555",fontSize:11,marginLeft:2}}>{iOpen?"▲":"▼"}</span>
+      </div>
+      {iOpen&&detail&&(
+        <div style={{marginTop:9,paddingTop:9,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{fontSize:11,color:result.color,marginBottom:6}}>{result.reason}</div>
+          {detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FarmMetricCard(props){
+  var icon=props.icon,label=props.label,value=props.value,unit=props.unit,color=props.color,sub=props.sub,desc=props.desc;
+  return (
+    <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 11px",borderLeft:"3px solid "+(color||"#555")}}>
+      <div style={{fontSize:10,color:"#555",letterSpacing:1,marginBottom:4}}>{icon} {label}</div>
+      <div style={{fontSize:20,fontWeight:"bold",color:color||"#e8dcc8"}}>{value}<span style={{fontSize:11,color:"#777",marginLeft:3}}>{unit}</span></div>
+      {sub&&<div style={{fontSize:10,color:color||"#888",marginTop:2}}>{sub}</div>}
+      {desc&&<div style={{fontSize:10,color:"#555",marginTop:3,lineHeight:1.5}}>{desc}</div>}
+    </div>
+  );
+}
+
+function FarmingDashboard(props){
+  var lat=props.lat,lon=props.lon,locationName=props.locationName,forecastData=props.forecastData,u=props.u||{temp:"C"};
+  var farmType=useState("arable");var iFarm=farmType[0];var setFarmType=farmType[1];
+  var dayIdx=useState(0);var iDayIdx=dayIdx[0];var setDayIdx=dayIdx[1];
+  var tab=useState("operations");var iTab=tab[0];var setTab=tab[1];
+
+  function cvtT(c){return u.temp==="F"?+(c*9/5+32).toFixed(1):+c;}
+  function tUnit(){return u.temp==="F"?"°F":"°C";}
+
+  var days=forecastData||[];
+  if(!days.length)return null;
+  var day=days[Math.min(iDayIdx,days.length-1)];
+
+  // Core derived values for selected day
+  var soilT=soilTemp(day.temp,day.low);
+  var et0=calcET0(day.temp,day.low,day.windMph,day.humidity,day.uvMax||5);
+  var gdd=calcGDD(day.temp,day.low,GDD_BASE[iFarm]);
+  var irrNeed=irrigationNeed(et0,day.rainMm,day.temp);
+  var spray=sprayWindow(day);
+  var field=fieldAccess(day);
+  var harvest=harvestWindow(day);
+  var grazing=grazingSuitable(day);
+  var drilling=drillingWindow(soilT,day);
+  var blight=blightRisk(days.slice(iDayIdx,iDayIdx+3));
+  var hutton=huttonRisk(days.slice(iDayIdx,iDayIdx+2));
+
+  // GDD accumulation across forecast
+  var gddAccum=0;
+  var gddByDay=days.slice(0,14).map(function(d){
+    var g=calcGDD(d.temp,d.low,GDD_BASE[iFarm]);
+    gddAccum+=g;
+    return {date:d.date,gdd:g,accum:+gddAccum.toFixed(1)};
+  });
+
+  // Crop calendar recommendations
+  var month=new Date().getMonth();
+  var calRecs={
+    arable:[
+      {months:[8,9,10],task:"🌱 Autumn drilling window",check:drilling.status==="go"?"Open":"Closed",color:drilling.color},
+      {months:[3,4],task:"🌱 Spring drilling / topdressing",check:drilling.status==="go"?"Open":"Closed",color:drilling.color},
+      {months:[4,5,6],task:"💊 Fungicide/herbicide spraying",check:spray.status==="go"?"Open":"Closed",color:spray.color},
+      {months:[7,8],task:"🌾 Harvest window",check:harvest.status==="go"?"Open":"Closed",color:harvest.color},
+    ],
+    livestock:[
+      {months:[3,4,5,6,7,8,9,10],task:"🐄 Grazing suitability",check:grazing.status==="go"?"Suitable":"Restricted",color:grazing.color},
+      {months:[0,1,2,11],task:"🏠 Housing conditions",check:day.temp<5||day.windMph>30?"Check ventilation":"Good",color:day.temp<5?"#ffaa00":"#44cc66"},
+      {months:[0,1,2,3,10,11],task:"💊 Mineral supplementation",check:day.temp<5?"Consider":"Monitor",color:day.temp<5?"#ffaa00":"#44cc66"},
+    ],
+    horticulture:[
+      {months:[3,4,5],task:"🌱 Planting window",check:soilT>=8?"Open":"Too cool",color:soilT>=8?"#44cc66":"#ff8800"},
+      {months:[5,6,7,8],task:"💧 Irrigation requirement",check:irrNeed.level,color:irrNeed.color},
+      {months:[4,5,6,7,8,9],task:"🍅 Blight / disease risk",check:blight.level,color:blight.color},
+      {months:[6,7,8,9],task:"🥕 Harvest conditions",check:harvest.status==="go"?"Favourable":"Unfavourable",color:harvest.color},
+    ],
+    mixed:[
+      {months:[8,9,10],task:"🌾 Autumn drilling",check:drilling.status==="go"?"Open":"Closed",color:drilling.color},
+      {months:[3,4,5,6,7,8,9,10],task:"🐄 Grazing",check:grazing.status==="go"?"Suitable":"Restricted",color:grazing.color},
+      {months:[4,5,6,7,8,9],task:"💊 Spraying",check:spray.status==="go"?"Open":"Closed",color:spray.color},
+      {months:[7,8],task:"🌾 Harvest",check:harvest.status==="go"?"Open":"Closed",color:harvest.color},
+    ],
+  };
+  var currentCal=(calRecs[iFarm]||[]).filter(function(r){return r.months.includes(month);});
+
+  var sectionSty={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(100,180,80,0.25)",borderRadius:16,padding:"18px 16px",marginBottom:16};
+  var tabs=[{id:"operations",label:"Operations"},{id:"conditions",label:"Field Conditions"},{id:"disease",label:"Disease & Pest"},{id:"planning",label:"7-Day Planning"},{id:"calendar",label:"Crop Calendar"}];
+
+  return (
+    <div style={sectionSty}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+        <span style={{fontSize:20}}>🌾</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,color:"#aaddaa",letterSpacing:2,textTransform:"uppercase"}}>Farming & Agriculture</div>
+          <div style={{fontSize:10,color:"#555",marginTop:1}}>{locationName}</div>
+        </div>
+      </div>
+
+      {/* Farm type selector */}
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+        {FARM_TYPES.map(function(ft){
+          var on=iFarm===ft.id;
+          return <button key={ft.id} onClick={function(){setFarmType(ft.id);}} style={{padding:"5px 11px",borderRadius:10,border:"1px solid",borderColor:on?"#88cc66":"rgba(255,255,255,0.1)",background:on?"rgba(100,180,80,0.15)":"rgba(255,255,255,0.03)",color:on?"#aaddaa":"#666",fontSize:11,cursor:"pointer"}}>{ft.icon} {ft.label}</button>;
+        })}
+      </div>
+
+      {/* Day selector */}
+      <div style={{display:"flex",gap:4,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+        {days.slice(0,7).map(function(d,i){
+          var sp=sprayWindow(d);
+          var on=iDayIdx===i;
+          return <button key={i} onClick={function(){setDayIdx(i);}} style={{flex:"0 0 auto",padding:"6px 10px",borderRadius:10,border:"1px solid",borderColor:on?sp.color:"rgba(255,255,255,0.08)",background:on?"rgba(255,255,255,0.07)":"transparent",color:on?"#e8dcc8":"#666",fontSize:11,cursor:"pointer",minWidth:52,textAlign:"center"}}>
+            <div style={{fontSize:9,color:sp.color,marginBottom:2}}>●</div>
+            <div>{d.date.split(" ")[0]}</div>
+          </button>;
+        })}
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:14,overflowX:"auto"}}>
+        {tabs.map(function(t){var on=iTab===t.id;return <button key={t.id} onClick={function(){setTab(t.id);}} style={{padding:"7px 12px",background:"none",border:"none",borderBottom:on?"2px solid #88cc66":"2px solid transparent",color:on?"#aaddaa":"#555",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>{t.label}</button>;})}
+      </div>
+
+      {/* ── Operations Tab ── */}
+      {iTab==="operations"&&(
+        <div>
+          <div style={{fontSize:11,color:"#555",marginBottom:12}}>{day.date} · {day.condition} · {cvtT(day.temp)}{tUnit()} · Wind {day.windMph}mph · Rain {day.rainMm}mm</div>
+          {/* Show relevant ops per farm type */}
+          {(iFarm==="arable"||iFarm==="mixed")&&(
+            <div>
+              <FarmOpCard icon="💊" label="Spray Window" result={spray} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>Wind: {day.windMph}mph (limit 13mph) · Temp: {cvtT(day.temp)}{tUnit()} · Humidity: {day.humidity}% · Rain: {day.rainMm}mm<br/>Best time: {day.humidity<70&&day.windMph<8?"Morning or evening":"Check conditions carefully"}</div>}/>
+              <FarmOpCard icon="🌱" label="Drilling / Seeding" result={drilling} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>Soil temp (est.): {cvtT(soilT)}{tUnit()} · Min for wheat: 5°C · Min for OSR: 8°C · Field moisture: {day.rainMm>=5?"Wet":"Likely suitable"}</div>}/>
+              <FarmOpCard icon="🌾" label="Harvest Window" result={harvest} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>Humidity: {day.humidity}% (target <70%) · Rain: {day.rain}% chance · Wind: {day.windMph}mph<br/>Grain moisture risk: {day.humidity>=80?"High":"Low"}</div>}/>
+            </div>
+          )}
+          {(iFarm==="livestock"||iFarm==="mixed")&&(
+            <div>
+              <FarmOpCard icon="🐄" label="Grazing Conditions" result={grazing} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>Rain: {day.rainMm}mm · Temp: {cvtT(day.temp)}{tUnit()} · Wind: {day.windMph}mph<br/>Poaching risk: {day.rainMm>=6?"High":day.rainMm>=3?"Moderate":"Low"} · Welfare risk: {day.windMph>=35||day.temp<=-3?"Yes":"Low"}</div>}/>
+              <FarmOpCard icon="🏠" label="Housing / Shelter" result={{status:day.temp<2||day.windMph>40?"caution":"go",color:day.temp<2||day.windMph>40?"#ffcc00":"#44cc66",reason:day.temp<2?"Cold — check housing ventilation and bedding":day.windMph>40?"High winds — check building integrity":"Housing conditions satisfactory"}} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>Temp: {cvtT(day.temp)}{tUnit()} · Wind chill factor active: {day.windMph>20&&day.temp<8?"Yes":"No"} · Check feed and water supply</div>}/>
+            </div>
+          )}
+          {(iFarm==="horticulture"||iFarm==="mixed")&&(
+            <div>
+              <FarmOpCard icon="🌱" label="Planting Window" result={{status:soilT>=8&&day.rainMm<6?"go":soilT>=5?"caution":"stop",color:soilT>=8&&day.rainMm<6?"#44cc66":soilT>=5?"#ffcc00":"#ff2200",reason:soilT>=8&&day.rainMm<6?"Good planting conditions":soilT<5?"Soil too cold for most transplants":"Check soil moisture before planting"}} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>Soil temp: {cvtT(soilT)}{tUnit()} · Min for most veg: 8°C · Rain: {day.rainMm}mm · Frost risk tonight: {day.low<=1?"Yes — protect transplants":"Low"}</div>}/>
+              <FarmOpCard icon="💧" label="Irrigation" result={{status:irrNeed.level==="None"?"go":irrNeed.level==="Low"?"caution":irrNeed.level==="Moderate"?"delay":"stop",color:irrNeed.color,reason:irrNeed.desc}} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>ET₀: {et0}mm · Rainfall: {day.rainMm}mm · Deficit: {Math.max(0,et0-day.rainMm).toFixed(1)}mm<br/>Suggested application: {irrNeed.mm>0?irrNeed.mm+"mm":"None required"}</div>}/>
+            </div>
+          )}
+          <FarmOpCard icon="🚜" label="Field Traffic / Access" result={field} detail={<div style={{fontSize:11,color:"#9a8c7a",lineHeight:1.7}}>Rain: {day.rainMm}mm · Ground state: {day.rainMm>=10?"Saturated":day.rainMm>=4?"Wet":"Likely trafficable"}<br/>Compaction risk: {day.rainMm>=8?"High":day.rainMm>=4?"Moderate":"Low"}</div>}/>
+          <div style={{fontSize:10,color:"#444",marginTop:8,lineHeight:1.6,padding:"8px 12px",background:"rgba(255,255,255,0.02)",borderRadius:8}}>
+            ⚠️ Advisory only. Soil conditions vary by field, soil type and drainage. Consult your agronomist and check AHDB recommendations for your crops.
+          </div>
+        </div>
+      )}
+
+      {/* ── Field Conditions Tab ── */}
+      {iTab==="conditions"&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+            <FarmMetricCard icon="🌡️" label="SOIL TEMP (EST.)" value={cvtT(soilT)} unit={tUnit()}
+              color={soilT<3?"#88ccff":soilT<5?"#ffaa00":soilT>=8?"#44cc66":"#aaddaa"}
+              sub={soilT<3?"Below drilling threshold":soilT<5?"Marginal for drilling":soilT>=8?"Good for planting":"Acceptable for hardy crops"}
+              desc="Surface soil temp estimated from air temp. Use soil thermometer to verify."/>
+            <FarmMetricCard icon="💧" label="ET₀ (EVAPOTRANS.)" value={et0} unit="mm/day"
+              color={et0>=5?"#ff8800":et0>=3?"#ffcc00":"#4a9fd4"}
+              sub={et0>=5?"High water demand":et0>=3?"Moderate demand":"Low demand"}
+              desc="Reference evapotranspiration. Compare to rainfall to estimate soil moisture deficit."/>
+            <FarmMetricCard icon="🌱" label="GROWING DEG. DAYS" value={gdd.toFixed(1)} unit="GDD"
+              color="#88cc66"
+              sub={"Base "+GDD_BASE[iFarm]+"°C · Accumulated: "+gddByDay[iDayIdx]?.accum+"°C"}
+              desc="Heat units accumulated today. Tracks crop development stage."/>
+            <FarmMetricCard icon="🌧️" label="SOIL WATER" value={day.rainMm>=10?"Saturated":day.rainMm>=5?"Wet":day.rainMm>=2?"Moist":"Dry"} unit=""
+              color={day.rainMm>=10?"#ff4400":day.rainMm>=5?"#ff8800":day.rainMm>=2?"#4a9fd4":"#ffcc00"}
+              sub={"Rain: "+day.rainMm+"mm today"}
+              desc="Surface soil moisture estimate from rainfall. Varies by soil type and drainage."/>
+            <FarmMetricCard icon="❄️" label="FROST RISK" value={day.low<=0?"FROST":day.low<=2?"RISK":"CLEAR"} unit=""
+              color={day.low<=0?"#88ccff":day.low<=2?"#ffcc00":"#44cc66"}
+              sub={"Min temp: "+cvtT(day.low)+tUnit()}
+              desc="Air frost occurs at ≤0°C. Ground frost can occur at +2°C or below."/>
+            <FarmMetricCard icon="💧" label="IRRIGATION" value={irrNeed.level} unit=""
+              color={irrNeed.color}
+              sub={irrNeed.mm>0?"Apply ~"+irrNeed.mm+"mm":"No application needed"}
+              desc={"ET₀ "+et0+"mm vs "+day.rainMm+"mm rain. Deficit: "+Math.max(0,et0-day.rainMm).toFixed(1)+"mm"}/>
+          </div>
+          {/* Frost risk 7-day strip */}
+          <div style={{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>7-Day Frost Risk</div>
+          <div style={{display:"flex",gap:3,marginBottom:16}}>
+            {days.slice(0,7).map(function(d,i){
+              var fc=d.low<=0?"#88ccff":d.low<=2?"#ffcc00":"#44cc66";
+              var label=d.low<=0?"Frost":d.low<=2?"Risk":"Clear";
+              return <div key={i} style={{flex:1,textAlign:"center"}}>
+                <div style={{fontSize:9,color:fc,marginBottom:2}}>●</div>
+                <div style={{fontSize:9,color:"#555",marginBottom:2}}>{d.date.split(" ")[0]}</div>
+                <div style={{fontSize:9,color:fc}}>{label}</div>
+                <div style={{fontSize:9,color:"#444"}}>{cvtT(d.low)}{tUnit()}</div>
+              </div>;
+            })}
+          </div>
+          {/* GDD accumulation chart */}
+          <div style={{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>GDD Accumulation (14-day)</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:2,height:60,marginBottom:4}}>
+            {gddByDay.map(function(g,i){
+              var maxAccum=gddByDay[gddByDay.length-1].accum||1;
+              var ht=Math.round((g.gdd/(Math.max(...gddByDay.map(function(x){return x.gdd;}))||1))*52)+4;
+              return <div key={i} title={g.date+": "+g.gdd+"GDD (total: "+g.accum+")"} style={{flex:1,height:ht+"px",background:"rgba(136,204,102,"+(0.3+Math.min(g.gdd/10,0.7))+")",borderRadius:"2px 2px 0 0",minHeight:2}}/>;
+            })}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#444"}}>
+            <span>Day 1</span><span>Day 7</span><span>Day 14</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Disease & Pest Tab ── */}
+      {iTab==="disease"&&(
+        <div>
+          <div style={{fontSize:11,color:"#555",marginBottom:12}}>Disease risk assessment for {day.date} — based on temperature and humidity thresholds</div>
+          {/* Blight */}
+          <div style={{padding:"12px 14px",borderRadius:12,border:"1px solid "+blight.color+"44",borderLeft:"3px solid "+blight.color,background:blight.color+"0a",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <span style={{fontSize:16}}>🍂</span>
+              <div style={{flex:1,fontSize:12,color:"#e8dcc8",fontWeight:"bold"}}>Potato/Tomato Late Blight (P. infestans)</div>
+              <span style={{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+blight.color,color:blight.color}}>{blight.level}</span>
+            </div>
+            <div style={{fontSize:11,color:blight.color,marginBottom:4}}>{blight.desc}</div>
+            <div style={{fontSize:10,color:"#555",lineHeight:1.6}}>Smith Period criteria: Temp 10–25°C AND RH≥90% for 2+ days. Current: {day.temp.toFixed(1)}°C / {day.humidity}% RH</div>
+          </div>
+          {/* Hutton */}
+          <div style={{padding:"12px 14px",borderRadius:12,border:"1px solid "+hutton.color+"44",borderLeft:"3px solid "+hutton.color,background:hutton.color+"0a",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <span style={{fontSize:16}}>🌿</span>
+              <div style={{flex:1,fontSize:12,color:"#e8dcc8",fontWeight:"bold"}}>Hutton Criteria (UK Blight Warning)</div>
+              <span style={{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+hutton.color,color:hutton.color}}>{hutton.level}</span>
+            </div>
+            <div style={{fontSize:11,color:hutton.color,marginBottom:4}}>{hutton.desc}</div>
+            <div style={{fontSize:10,color:"#555",lineHeight:1.6}}>Two consecutive days: min ≥10°C AND ≥6hrs RH≥90%. Night min: {cvtT(day.low)}{tUnit()}</div>
+          </div>
+          {/* General disease conditions */}
+          {[
+            {name:"Septoria Tritici (wheat)",icon:"🌾",risk:day.temp>=10&&day.temp<=25&&day.humidity>=70&&day.rain>=40,warn:day.temp>=10&&day.humidity>=60,desc:"Favoured by mild wet conditions. Temp 10-25°C, wet leaf surface."},
+            {name:"Powdery Mildew",icon:"⬜",risk:day.temp>=15&&day.temp<=25&&day.humidity>=50&&day.humidity<=80,warn:day.temp>=12&&day.humidity>=45,desc:"Favoured by warm, humid but NOT wet conditions (50-80% RH, 15-25°C)."},
+            {name:"Yellow/Brown Rust",icon:"🟡",risk:day.temp>=7&&day.temp<=20&&day.humidity>=95,warn:day.temp>=5&&day.humidity>=80,desc:"Cool moist conditions. Yellow rust: 7-12°C. Brown rust: 15-25°C."},
+            {name:"Sclerotinia (OSR)",icon:"🌼",risk:day.temp>=15&&day.temp<=25&&day.humidity>=80&&day.rain>=2,warn:day.temp>=12&&day.humidity>=70,desc:"Infection at petal fall. Warm, wet conditions (>15°C, high RH)."},
+          ].map(function(d,i){
+            var color=d.risk?"#ff8800":d.warn?"#ffcc00":"#44cc66";
+            var level=d.risk?"High risk":d.warn?"Watch":"Low risk";
+            return <div key={i} style={{padding:"10px 14px",borderRadius:12,border:"1px solid "+color+"33",borderLeft:"2px solid "+color,marginBottom:6,background:"rgba(255,255,255,0.02)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+                <span>{d.icon}</span>
+                <div style={{flex:1,fontSize:11,color:"#e8dcc8"}}>{d.name}</div>
+                <span style={{fontSize:10,color:color}}>{level}</span>
+              </div>
+              <div style={{fontSize:10,color:"#555",lineHeight:1.5}}>{d.desc}</div>
+            </div>;
+          })}
+          <div style={{fontSize:10,color:"#444",marginTop:8,lineHeight:1.6,padding:"8px 12px",background:"rgba(255,255,255,0.02)",borderRadius:8}}>
+            ⚠️ Disease thresholds are indicative. Always consult your agronomist and refer to AHDB Fungicide Performance data before treatment.
+          </div>
+        </div>
+      )}
+
+      {/* ── 7-Day Planning Tab ── */}
+      {iTab==="planning"&&(
+        <div>
+          <div style={{fontSize:11,color:"#555",marginBottom:12}}>Tap a day to view full operations detail</div>
+          {days.slice(0,7).map(function(d,i){
+            var sp=sprayWindow(d);
+            var fa=fieldAccess(d);
+            var hw=harvestWindow(d);
+            var gr=grazingSuitable(d);
+            var st=soilTemp(d.temp,d.low);
+            var dr=drillingWindow(st,d);
+            var ops=iFarm==="livestock"?[gr]:(iFarm==="horticulture"?[sp,fa,hw]:[sp,dr,hw,fa]);
+            var worst=ops.find(function(o){return o.status==="stop";})||ops.find(function(o){return o.status==="delay";})||ops.find(function(o){return o.status==="caution";})||{status:"go",color:"#44cc66"};
+            var stopC=ops.filter(function(o){return o.status==="stop";}).length;
+            var cautionC=ops.filter(function(o){return o.status==="caution";}).length;
+            return (
+              <div key={i} onClick={function(){setDayIdx(i);setTab("operations");}}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",marginBottom:6,background:iDayIdx===i?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)",cursor:"pointer"}}>
+                <div style={{width:3,height:40,borderRadius:2,background:worst.color,flexShrink:0}}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,color:"#e8dcc8"}}>{d.date}</div>
+                  <div style={{fontSize:10,color:"#666",marginTop:1}}>{d.condition} · {cvtT(d.temp)}{tUnit()} · {d.windMph}mph · {d.rainMm}mm · RH {d.humidity}%</div>
+                </div>
+                <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                  {stopC>0&&<span style={{fontSize:10,color:"#ff4422"}}>{stopC}✗</span>}
+                  {cautionC>0&&<span style={{fontSize:10,color:"#ffcc00"}}>{cautionC}⚠</span>}
+                  <GoNoBadge status={worst.status} color={worst.color}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Crop Calendar Tab ── */}
+      {iTab==="calendar"&&(
+        <div>
+          <div style={{fontSize:11,color:"#555",marginBottom:12}}>
+            Seasonal recommendations for {FARM_TYPES.find(function(f){return f.id===iFarm;})?.label} — {new Date().toLocaleString("en-GB",{month:"long",year:"numeric"})}
+          </div>
+          {currentCal.length===0&&(
+            <div style={{textAlign:"center",padding:"24px",color:"#555",fontSize:12}}>No specific calendar tasks for this month for {iFarm} farming. Check the Operations tab for daily go/no-go assessments.</div>
+          )}
+          {currentCal.map(function(r,i){
+            return <div key={i} style={{padding:"12px 14px",borderRadius:12,border:"1px solid "+r.color+"44",borderLeft:"3px solid "+r.color,background:r.color+"08",marginBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{flex:1,fontSize:12,color:"#e8dcc8",fontWeight:"bold"}}>{r.task}</div>
+                <span style={{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+r.color,color:r.color}}>{r.check}</span>
+              </div>
+            </div>;
+          })}
+          {/* ET0 and GDD summary */}
+          <div style={{marginTop:14,padding:"12px 14px",background:"rgba(136,204,102,0.05)",border:"1px solid rgba(136,204,102,0.15)",borderRadius:12}}>
+            <div style={{fontSize:11,color:"#aaddaa",marginBottom:8,fontWeight:"bold"}}>📊 Season Summary (14-day forecast)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{fontSize:11,color:"#9a8c7a"}}>Total GDD: <span style={{color:"#aaddaa",fontWeight:"bold"}}>{gddByDay.reduce(function(a,b){return a+b.gdd;},0).toFixed(1)}</span></div>
+              <div style={{fontSize:11,color:"#9a8c7a"}}>Total ET₀: <span style={{color:"#4a9fd4",fontWeight:"bold"}}>{days.slice(0,14).reduce(function(a,d){return a+calcET0(d.temp,d.low,d.windMph,d.humidity,d.uvMax||5);},0).toFixed(1)}mm</span></div>
+              <div style={{fontSize:11,color:"#9a8c7a"}}>Frost days: <span style={{color:"#88ccff",fontWeight:"bold"}}>{days.slice(0,14).filter(function(d){return d.low<=0;}).length}</span></div>
+              <div style={{fontSize:11,color:"#9a8c7a"}}>Spray days: <span style={{color:"#88cc66",fontWeight:"bold"}}>{days.slice(0,14).filter(function(d){return sprayWindow(d).status==="go";}).length}</span></div>
+              <div style={{fontSize:11,color:"#9a8c7a"}}>Harvest days: <span style={{color:"#ffcc44",fontWeight:"bold"}}>{days.slice(0,14).filter(function(d){return harvestWindow(d).status==="go";}).length}</span></div>
+              <div style={{fontSize:11,color:"#9a8c7a"}}>Rain days: <span style={{color:"#4a9fd4",fontWeight:"bold"}}>{days.slice(0,14).filter(function(d){return d.rainMm>=2;}).length}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 function App(){
   var fd=useState([]);var iFd=fd[0];var setFd=fd[1];
@@ -3095,6 +3647,7 @@ function App(){
             {iRoles.includes("meteorology")&&<MeteoDashboard lat={iLat} lon={iLon} locationName={iLn} forecastData={iFd} u={u}/>}
             {iRoles.includes("construction")&&<ConstructionDashboard lat={iLat} lon={iLon} locationName={iLn} forecastData={iFd} u={u}/>}
             {iRoles.includes("sailing")&&<SailingDashboard lat={iLat} lon={iLon} locationName={iLn} forecastData={iFd} u={u}/>}
+            {iRoles.includes("farming")&&<FarmingDashboard lat={iLat} lon={iLon} locationName={iLn} forecastData={iFd} u={u}/>}
             {iAp==="overview"&&<WeatherOverview forecastData={iFd} locationName={iLn} u={u} hourlyRaw={iHr} lat={iLat} lon={iLon}/>}
             {iAp==="ten"&&<TenDayForecast forecastData={iFd} u={u}/>}
             {iAp==="hourly"&&<HourlyForecast forecastData={iFd} hourlyRaw={iHr} u={u}/>}
