@@ -60,6 +60,19 @@ var NAV_ITEMS = [
   {id:"extremes", label:"Weather Extremes", icon:"🌡️"},
 ];
 
+// ── User Roles ───────────────────────────────────────────────────────────────
+var USER_ROLES = [
+  {id:"casual",      icon:"☀️",  label:"Casual",          desc:"Everyday weather checking"},
+  {id:"meteorology", icon:"🌩️", label:"Meteorology",      desc:"Advanced weather analysis"},
+  {id:"construction",icon:"🏗️", label:"Construction",     desc:"Site planning & safety"},
+  {id:"sailing",     icon:"⛵",  label:"Sailing & Boating",desc:"Marine forecasts"},
+  {id:"farming",     icon:"🌾",  label:"Farming",          desc:"Crop & livestock planning"},
+  {id:"angling",     icon:"🎣",  label:"Angling & Fishing",desc:"Fishing conditions"},
+  {id:"ski",         icon:"⛷️", label:"Ski & Snow Sports",desc:"Resort & slope conditions"},
+  {id:"hiking",      icon:"🏕️", label:"Hiking & Outdoors",desc:"Trail & camping weather"},
+  {id:"aviation",    icon:"✈️",  label:"Aviation",         desc:"Pilot & drone weather"},
+];
+
 // ── Unit helpers ─────────────────────────────────────────────────────────────
 function cvtTemp(c,u){return u==="F"?Math.round(c*9/5+32):c;}
 function fmtTemp(c,u){return cvtTemp(c,u)+"°"+u;}
@@ -1066,6 +1079,94 @@ function fireBrowserNotification(title, body, icon){
   try{ new Notification(title, {body:body, icon:icon||"/favicon.ico"}); }catch(e){}
 }
 
+// ── Welcome Banner ───────────────────────────────────────────────────────────
+function WelcomeBanner(props){
+  var onClose=props.onClose;
+  return (
+    <div style={{background:"linear-gradient(90deg,rgba(255,119,0,0.18) 0%,rgba(74,159,212,0.12) 100%)",border:"1px solid rgba(255,119,0,0.35)",borderRadius:14,padding:"14px 18px",marginBottom:16,position:"relative"}}>
+      <button onClick={onClose} style={{position:"absolute",top:8,right:10,background:"none",border:"none",color:"#666",fontSize:18,cursor:"pointer",lineHeight:1}}>×</button>
+      <div style={{fontSize:11,letterSpacing:3,color:"#ff9944",textTransform:"uppercase",marginBottom:6}}>What's New</div>
+      <div style={{fontSize:13,color:"#e8dcc8",fontWeight:"bold",marginBottom:6}}>Personalised Forecasts — Now Live</div>
+      <div style={{fontSize:12,color:"#9a8c7a",lineHeight:1.7}}>
+        The Weather Centre now tailors forecasts to your role — whether you're a sailor, farmer, pilot or just checking the weekend weather. 
+        Sign in and choose your profile to unlock a forecast built around what matters to you.
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:"#ff9944",padding:"3px 9px",border:"1px solid rgba(255,119,0,0.3)",borderRadius:20}}>⛵ Marine</span>
+        <span style={{fontSize:11,color:"#88ccff",padding:"3px 9px",border:"1px solid rgba(74,159,212,0.3)",borderRadius:20}}>✈️ Aviation</span>
+        <span style={{fontSize:11,color:"#aaddaa",padding:"3px 9px",border:"1px solid rgba(100,200,100,0.3)",borderRadius:20}}>🌾 Agriculture</span>
+        <span style={{fontSize:11,color:"#ddbbff",padding:"3px 9px",border:"1px solid rgba(180,100,255,0.3)",borderRadius:20}}>🏗️ Construction</span>
+        <span style={{fontSize:11,color:"#ffdd88",padding:"3px 9px",border:"1px solid rgba(255,200,0,0.3)",borderRadius:20}}>+ more</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Role Survey Modal ─────────────────────────────────────────────────────────
+function RoleSurveyModal(props){
+  var onClose=props.onClose,onSave=props.onSave,user=props.user;
+  var selected=useState([]);var iSelected=selected[0];var setSelected=selected[1];
+
+  function toggleRole(id){
+    setSelected(function(prev){
+      if(prev.includes(id)) return prev.filter(function(r){return r!==id;});
+      if(prev.length>=3) return prev; // max 3
+      return prev.concat([id]);
+    });
+  }
+
+  function handleSave(){
+    if(iSelected.length===0){onClose();return;}
+    onSave(iSelected);
+    onClose();
+  }
+
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.85)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px 16px"}}>
+      <div style={{background:"#0e1624",border:"1px solid rgba(255,119,0,0.4)",borderRadius:20,padding:"28px 24px",width:"min(480px,96vw)",boxShadow:"0 16px 60px rgba(0,0,0,0.95)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:32,marginBottom:8}}>🌤️</div>
+          <div style={{fontSize:15,color:"#ff9944",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>How do you use The Weather Centre?</div>
+          <div style={{fontSize:12,color:"#7a6e5e",lineHeight:1.7}}>Choose up to 3 roles. We'll tailor your forecast to what matters most to you. You can change this anytime in Settings.</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
+          {USER_ROLES.map(function(role){
+            var on=iSelected.includes(role.id);
+            var disabled=!on&&iSelected.length>=3;
+            return (
+              <button key={role.id} onClick={function(){if(!disabled)toggleRole(role.id);}}
+                style={{padding:"12px 10px",borderRadius:12,border:"1px solid",
+                  borderColor:on?"#ff7700":disabled?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.1)",
+                  background:on?"rgba(255,119,0,0.18)":disabled?"rgba(255,255,255,0.02)":"rgba(255,255,255,0.04)",
+                  color:on?"#ffaa44":disabled?"#444":"#9a8c7a",
+                  cursor:disabled?"not-allowed":"pointer",textAlign:"left",
+                  opacity:disabled?0.5:1,transition:"all 0.15s"}}>
+                <div style={{fontSize:20,marginBottom:4}}>{role.icon}</div>
+                <div style={{fontSize:12,fontWeight:"bold",color:on?"#ffcc88":"#e8dcc8",marginBottom:2}}>{role.label}</div>
+                <div style={{fontSize:10,color:on?"#cc8844":"#665e52",lineHeight:1.4}}>{role.desc}</div>
+                {on&&<div style={{fontSize:10,color:"#ff9944",marginTop:4}}>✓ Selected</div>}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{fontSize:11,color:"#555",textAlign:"center",marginBottom:14}}>
+          {iSelected.length===0?"Select at least one to personalise your forecast":
+           iSelected.length===3?"Maximum 3 roles selected":
+           iSelected.length+" of 3 selected"}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,padding:"11px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#666",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            Skip for now
+          </button>
+          <button onClick={handleSave} style={{flex:2,padding:"11px",borderRadius:12,border:"none",background:iSelected.length>0?"#ff7700":"#333",color:iSelected.length>0?"#fff":"#666",fontSize:13,cursor:iSelected.length>0?"pointer":"default",fontFamily:"Georgia,serif"}}>
+            {iSelected.length>0?"Save My Profile":"Select a role to continue"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Auth Modal ────────────────────────────────────────────────────────────────
 function AuthModal(props){
   var onClose=props.onClose,onLogin=props.onLogin;
@@ -1307,7 +1408,19 @@ function AlertsPanel(props){
 
 // ── User Settings Panel ───────────────────────────────────────────────────────
 function UserSettingsPanel(props){
-  var user=props.user,units=props.units,setUnits=props.setUnits,onClose=props.onClose,onOpenAuth=props.onOpenAuth,alertPrefs=props.alertPrefs,setAlertPrefs=props.setAlertPrefs;
+  var user=props.user,units=props.units,setUnits=props.setUnits,onClose=props.onClose,onOpenAuth=props.onOpenAuth,alertPrefs=props.alertPrefs,setAlertPrefs=props.setAlertPrefs,roles=props.roles||[],setRoles=props.setRoles||function(){};
+  var localRoles=useState(roles);var iLocalRoles=localRoles[0];var setLocalRoles=localRoles[1];
+  useEffect(function(){setLocalRoles(roles);},[roles]);
+  function toggleSettingsRole(id){
+    setLocalRoles(function(prev){
+      var next;
+      if(prev.includes(id)){next=prev.filter(function(r){return r!==id;});}
+      else if(prev.length<3){next=prev.concat([id]);}
+      else{next=prev;}
+      setRoles(next);
+      return next;
+    });
+  }
   var tab=useState("units");var iTab=tab[0];var setTab=tab[1];
   var displayName=useState((user&&user.displayName)||"");var iDisplayName=displayName[0];var setDisplayName=displayName[1];
   var profileMsg=useState("");var iProfileMsg=profileMsg[0];var setProfileMsg=profileMsg[1];
@@ -1353,7 +1466,7 @@ function UserSettingsPanel(props){
     user.delete().then(function(){onClose();}).catch(function(e){setProfileMsg("Re-sign in and try again.");});
   }
 
-  var tabs=[{id:"units",label:"Units"},{id:"alerts",label:"Alert Thresholds"},{id:"display",label:"Display"},{id:"account",label:"Account"}];
+  var tabs=[{id:"units",label:"Units"},{id:"alerts",label:"Alert Thresholds"},{id:"display",label:"Display"},{id:"roles",label:"My Role"},{id:"notifications",label:"Notifications"},{id:"account",label:"Account"}];
   var row={display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"};
 
   function Btn(p){
@@ -1410,6 +1523,46 @@ function UserSettingsPanel(props){
             <Toggle label="Show storm risk badge" val={alertPrefs.showStormBadge!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{showStormBadge:v}));}}/>
             <Toggle label="Show UV index on cards" val={alertPrefs.showUV!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{showUV:v}));}}/>
             <Toggle label="Auto-notify on page load" desc="Browser notification when you open the app" val={alertPrefs.autoNotify===true} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{autoNotify:v}));}}/>
+            {user&&<div style={{fontSize:11,color:"#4a9fd4",marginTop:12}}>Preferences synced to your account</div>}
+          </div>}
+          {iTab==="roles"&&<div>
+            <div style={{fontSize:11,color:"#888",marginBottom:14,lineHeight:1.6}}>Choose up to 3 roles to personalise your forecast. Active roles are highlighted.</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {USER_ROLES.map(function(role){
+                var on=iLocalRoles.includes(role.id);
+                var disabled=!on&&iLocalRoles.length>=3;
+                return (
+                  <button key={role.id} onClick={function(){if(!disabled)toggleSettingsRole(role.id);}}
+                    style={{padding:"10px 8px",borderRadius:10,border:"1px solid",
+                      borderColor:on?"#ff7700":disabled?"rgba(255,255,255,0.04)":"rgba(255,255,255,0.1)",
+                      background:on?"rgba(255,119,0,0.15)":disabled?"rgba(255,255,255,0.02)":"rgba(255,255,255,0.03)",
+                      color:on?"#ffaa44":disabled?"#444":"#9a8c7a",
+                      cursor:disabled?"not-allowed":"pointer",textAlign:"left",opacity:disabled?0.5:1}}>
+                    <div style={{fontSize:18,marginBottom:3}}>{role.icon}</div>
+                    <div style={{fontSize:11,fontWeight:"bold",color:on?"#ffcc88":"#e8dcc8",marginBottom:1}}>{role.label}</div>
+                    <div style={{fontSize:9,color:on?"#cc8844":"#554e46",lineHeight:1.3}}>{role.desc}</div>
+                    {on&&<div style={{fontSize:9,color:"#ff9944",marginTop:3}}>✓ Active</div>}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{fontSize:11,color:"#555",marginBottom:8}}>{iLocalRoles.length===0?"No roles selected":iLocalRoles.length+" of 3 selected"}</div>
+            {user&&<div style={{fontSize:11,color:"#4a9fd4"}}>Synced to your account</div>}
+          </div>}
+          {iTab==="notifications"&&<div>
+            <div style={{fontSize:11,color:"#888",marginBottom:14,lineHeight:1.6}}>Control how and when The Weather Centre notifies you.</div>
+            <Toggle label="All Notifications" desc="Master switch for all notifications" val={alertPrefs.notificationsEnabled!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{notificationsEnabled:v}));}}/>
+            <Toggle label="Browser Notifications" desc="Pop-up alerts in your browser" val={alertPrefs.browserNotify!==false&&alertPrefs.notificationsEnabled!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{browserNotify:v}));}}/>
+            <Toggle label="Auto-notify on page load" desc="Show alerts when you open the app" val={alertPrefs.autoNotify===true&&alertPrefs.notificationsEnabled!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{autoNotify:v}));}}/>
+            <Toggle label="Email Alerts" desc="Send weather alerts to your email" val={alertPrefs.emailNotify!==false&&alertPrefs.notificationsEnabled!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{emailNotify:v}));}}/>
+            <div style={{marginTop:14,padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+              <div style={{fontSize:11,color:"#888",marginBottom:6}}>Notify me about:</div>
+              <Toggle label="Heat warnings" val={alertPrefs.notifyHeat!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{notifyHeat:v}));}}/>
+              <Toggle label="Heavy rain" val={alertPrefs.notifyRain!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{notifyRain:v}));}}/>
+              <Toggle label="Strong winds" val={alertPrefs.notifyWind!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{notifyWind:v}));}}/>
+              <Toggle label="Storm risk" val={alertPrefs.notifyStorm!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{notifyStorm:v}));}}/>
+              <Toggle label="High UV" val={alertPrefs.notifyUV!==false} onChange={function(v){handleSaveAlertPrefs(Object.assign({},alertPrefs,{notifyUV:v}));}}/>
+            </div>
             {user&&<div style={{fontSize:11,color:"#4a9fd4",marginTop:12}}>Preferences synced to your account</div>}
           </div>}
           {iTab==="account"&&<div>
@@ -1580,11 +1733,56 @@ function App(){
   var showSettings=useState(false);var iShowSettings=showSettings[0];var setShowSettings=showSettings[1];
   var showShare=useState(false);var iShowShare=showShare[0];var setShowShare=showShare[1];
   var currentPlace=useRef(null);
-  var alertPrefsState=useState({tempHeat:30,rain:60,wind:25,uv:8,storm:true,showFeelLike:true,showStormBadge:true,showUV:true,autoNotify:false});
+  var alertPrefsState=useState({tempHeat:30,rain:60,wind:25,uv:8,storm:true,showFeelLike:true,showStormBadge:true,showUV:true,autoNotify:false,notificationsEnabled:true});
   var iAlertPrefs=alertPrefsState[0];var setAlertPrefs=alertPrefsState[1];
+  // Roles
+  var rolesState=useState([]);var iRoles=rolesState[0];var setRoles=rolesState[1];
+  var showSurvey=useState(false);var iShowSurvey=showSurvey[0];var setShowSurvey=showSurvey[1];
+  // Welcome banner — shown once per session
+  var showWelcome=useState(function(){try{return !localStorage.getItem("twc_welcome_seen");}catch(e){return true;}});
+  var iShowWelcome=showWelcome[0];var setShowWelcome=showWelcome[1];
+
+  function dismissWelcome(){
+    setShowWelcome(false);
+    try{localStorage.setItem("twc_welcome_seen","1");}catch(e){}
+  }
+
+  function handleSaveRoles(roles){
+    setRoles(roles);
+    try{localStorage.setItem("twc_roles",JSON.stringify(roles));}catch(e){}
+    if(iUser){fbDb.collection("users").doc(iUser.uid).set({roles:roles},{merge:true}).catch(function(){});}
+  }
 
   useEffect(function(){
-    var unsub=fbAuth.onAuthStateChanged(function(u){setUser(u||null);});
+    // Load roles from localStorage on mount
+    try{
+      var saved=JSON.parse(localStorage.getItem("twc_roles")||"[]");
+      if(saved.length>0)setRoles(saved);
+    }catch(e){}
+  },[]);
+
+  useEffect(function(){
+    var prevUser=null;
+    var unsub=fbAuth.onAuthStateChanged(function(u){
+      var wasNull=!prevUser;
+      prevUser=u;
+      setUser(u||null);
+      // Show survey on first sign-in if no roles set
+      if(u&&wasNull){
+        try{
+          var savedRoles=JSON.parse(localStorage.getItem("twc_roles")||"[]");
+          if(savedRoles.length===0)setShowSurvey(true);
+          else setRoles(savedRoles);
+        }catch(e){setShowSurvey(true);}
+        // Load prefs from Firestore
+        fbDb.collection("users").doc(u.uid).get().then(function(doc){
+          if(doc.exists){
+            var d=doc.data();
+            if(d.roles&&d.roles.length>0){setRoles(d.roles);try{localStorage.setItem("twc_roles",JSON.stringify(d.roles));}catch(e2){}}
+          }
+        }).catch(function(){});
+      }
+    });
     return unsub;
   },[]);
 
@@ -1696,13 +1894,27 @@ function App(){
       {iShowAuth&&<AuthModal onClose={function(){setShowAuth(false);}} onLogin={function(u){setUser(u);}}/>}
       {iShowSaved&&<SavedLocationsPanel user={iUser} currentPlace={currentPlace.current} onClose={function(){setShowSaved(false);}} onSelect={function(loc){fetchWeatherByCoords(loc.lat,loc.lon,loc.name);}}/>}
       {iShowAlerts&&<AlertsPanel forecastData={iFd} locationName={iLn} u={u} user={iUser} alertPrefs={iAlertPrefs} onClose={function(){setShowAlerts(false);}}/>}
-      {iShowSettings&&<UserSettingsPanel user={iUser} units={u} setUnits={setUnits} alertPrefs={iAlertPrefs} setAlertPrefs={setAlertPrefs} onClose={function(){setShowSettings(false);}} onOpenAuth={function(){setShowAuth(true);}}/>}
+      {iShowSettings&&<UserSettingsPanel user={iUser} units={u} setUnits={setUnits} alertPrefs={iAlertPrefs} setAlertPrefs={setAlertPrefs} roles={iRoles} setRoles={handleSaveRoles} onClose={function(){setShowSettings(false);}} onOpenAuth={function(){setShowAuth(true);}}/>}
       {iShowShare&&<ShareCardModal forecastData={iFd} locationName={iLn} u={u} onClose={function(){setShowShare(false);}}/>}
+      {iShowSurvey&&<RoleSurveyModal user={iUser} onClose={function(){setShowSurvey(false);}} onSave={handleSaveRoles}/>}
       <div style={wrapSty}>
         {/* ── Logo bar ── */}
         <div style={{display:"flex",alignItems:"center",marginBottom:14}}>
           <img src="data:image/jpeg;base64,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" alt="The Weather Centre" style={{height:44,width:"auto",objectFit:"contain",mixBlendMode:"screen"}}/>
         </div>
+        {/* ── Welcome Banner ── */}
+        {iShowWelcome&&<WelcomeBanner onClose={dismissWelcome}/>}
+        {/* ── Role indicator ── */}
+        {iRoles.length>0&&(
+          <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase"}}>Your profile:</span>
+            {iRoles.map(function(rid){
+              var role=USER_ROLES.find(function(r){return r.id===rid;});
+              return role?<span key={rid} style={{fontSize:11,color:"#ffaa44",padding:"2px 9px",border:"1px solid rgba(255,119,0,0.3)",borderRadius:20,background:"rgba(255,119,0,0.07)"}}>{role.icon} {role.label}</span>:null;
+            })}
+            <button onClick={function(){setShowSurvey(true);}} style={{fontSize:10,color:"#555",background:"none",border:"none",cursor:"pointer",padding:"2px 6px",textDecoration:"underline",fontFamily:"Georgia,serif"}}>change</button>
+          </div>
+        )}
         <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
           <NavDropdown activePage={iAp} setActivePage={setAp}/>
           <div ref={searchRef} style={{flex:1,minWidth:120,position:"relative"}}>
