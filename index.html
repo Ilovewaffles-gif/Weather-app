@@ -9,7 +9,7 @@
   <title>The Weather Centre</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.5/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.5/babel.min.js"></script>
   <!-- Firebase v9 compat (works without bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -46,7 +46,7 @@ window.addEventListener('error', function(e){
   if(r&&r.innerHTML==='') r.innerHTML='<div style="color:#ff6666;padding:20px;font-family:monospace;background:#0a0a1a;min-height:100vh"><h3>Script Error</h3><pre>'+e.message+'\n'+e.filename+':'+e.lineno+'</pre></div>';
 });
 </script>
-<script type="text/babel">
+<script type="text/babel" data-presets="react">
 var useState   = React.useState;
 var useEffect  = React.useEffect;
 var useRef     = React.useRef;
@@ -1052,7 +1052,7 @@ function LocationSearchDropdown(props){
   );
 }
 </script>
-<script type="text/babel">
+<script type="text/babel" data-presets="react">
 // ── Push Notification helpers ─────────────────────────────────────────────────
 var VAPID_PUBLIC = ""; // optional: add your VAPID key here for push
 function buildAlertList(forecastData, prefs){
@@ -1718,7 +1718,7 @@ function ShareCardModal(props){
 }
 
 </script>
-<script type="text/babel">
+<script type="text/babel" data-presets="react">
 // ── Meteorology Helpers ───────────────────────────────────────────────────────
 function wetBulb(T, Td, P){
   // Stull (2011) approximation - accurate to 0.3°C
@@ -3410,7 +3410,7 @@ function FarmingDashboard(props){
   );
 }
 </script>
-<script type="text/babel">
+<script type="text/babel" data-presets="react">
 // ── Main App ──────────────────────────────────────────────────────────────────
 function App(){
   var fd=useState([]);var iFd=fd[0];var setFd=fd[1];
