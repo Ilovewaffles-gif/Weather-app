@@ -3447,6 +3447,7 @@ React.createElement('div', {__self: this, __source: {fileName: _jsxFileName, lin
 , iRoles.includes("construction")&&React.createElement(ConstructionDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iRoles.includes("sailing")&&React.createElement(SailingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iRoles.includes("farming")&&React.createElement(FarmingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
+, iRoles.includes("angling")&&React.createElement(AnglingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iAp==="overview"&&React.createElement(WeatherOverview, { forecastData: iFd, locationName: iLn, u: u, hourlyRaw: iHr, lat: iLat, lon: iLon})
 , iAp==="ten"&&React.createElement(TenDayForecast, { forecastData: iFd, u: u})
 , iAp==="hourly"&&React.createElement(HourlyForecast, { forecastData: iFd, hourlyRaw: iHr, u: u})
@@ -3461,7 +3462,418 @@ React.createElement('div', {__self: this, __source: {fileName: _jsxFileName, lin
 );
 }
 try {
-  ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));
+  
+
+// ── Angling & Fishing Dashboard ───────────────────────────────────────────────
+
+var FISH_TYPES_FRESH = [
+  {id:"carp",    icon:"🐟", label:"Carp",         tempMin:12, tempMax:25, pressurePref:"stable", dawn:true,  dusk:true,  notes:"Prefers warm, stable conditions. Slow feeding below 10°C."},
+  {id:"pike",    icon:"🐠", label:"Pike",          tempMin:4,  tempMax:18, pressurePref:"falling",dawn:false, dusk:true,  notes:"Active in cooler water. Feeds well before pressure drops."},
+  {id:"bass_f",  icon:"🎣", label:"Bass (freshwater)",tempMin:15,tempMax:28,pressurePref:"rising", dawn:true,  dusk:true,  notes:"Highly active in warm water. Best on rising pressure."},
+  {id:"bream",   icon:"🐡", label:"Bream",         tempMin:10, tempMax:22, pressurePref:"stable", dawn:true,  dusk:false, notes:"Dawn feeders. Prefer calm, overcast conditions."},
+  {id:"tench",   icon:"🐟", label:"Tench",         tempMin:14, tempMax:24, pressurePref:"stable", dawn:true,  dusk:false, notes:"Summer dawn species. Muddy, weedy water preferred."},
+  {id:"trout",   icon:"🐡", label:"Trout",         tempMin:8,  tempMax:18, pressurePref:"rising", dawn:true,  dusk:true,  notes:"Cool, well-oxygenated water. Best on cloudy days."},
+  {id:"perch",   icon:"🐠", label:"Perch",         tempMin:8,  tempMax:20, pressurePref:"stable", dawn:false, dusk:true,  notes:"Ambush predator. Active through most of year."},
+  {id:"roach",   icon:"🐟", label:"Roach",         tempMin:6,  tempMax:20, pressurePref:"stable", dawn:true,  dusk:false, notes:"Winter/autumn species. Feeds through cold periods."},
+];
+
+var FISH_TYPES_SEA = [
+  {id:"bass_s",  icon:"🎣", label:"Sea Bass",      tempMin:12, tempMax:22, pressurePref:"rising", dawn:true,  dusk:true,  notes:"Peak summer/autumn. Follows baitfish. Best on tides."},
+  {id:"mackerel",icon:"🐟", label:"Mackerel",      tempMin:14, tempMax:24, pressurePref:"stable", dawn:false, dusk:false, notes:"Surface feeder, mid-day active. Shoaling species."},
+  {id:"cod",     icon:"🐡", label:"Cod",           tempMin:2,  tempMax:12, pressurePref:"falling",dawn:false, dusk:true,  notes:"Winter species. Rough seas improve catches."},
+  {id:"pollock", icon:"🐠", label:"Pollock",       tempMin:8,  tempMax:16, pressurePref:"stable", dawn:true,  dusk:true,  notes:"Rock and reef species. Best at low light."},
+  {id:"plaice",  icon:"🐟", label:"Plaice",        tempMin:8,  tempMax:18, pressurePref:"stable", dawn:false, dusk:false, notes:"Sandy bottoms. Slack water around tides."},
+  {id:"wrasse",  icon:"🐡", label:"Wrasse",        tempMin:12, tempMax:20, pressurePref:"rising", dawn:false, dusk:false, notes:"Rocky shore. Warm months only."},
+];
+
+// Moon phase calculation (0=new, 0.5=full, 1=new again)
+function moonPhase(date) {
+  var d = new Date(date);
+  var lp = 2551443; // lunar period in seconds
+  var newMoon = new Date(2000, 0, 6, 18, 14); // reference new moon
+  var phase = ((d - newMoon) / 1000) % lp;
+  if(phase < 0) phase += lp;
+  return phase / lp;
+}
+
+function moonPhaseName(phase) {
+  if(phase < 0.03 || phase > 0.97) return {name:"New Moon",     icon:"🌑", solunar:"Major"};
+  if(phase < 0.22)                  return {name:"Waxing Crescent",icon:"🌒",solunar:"Minor"};
+  if(phase < 0.28)                  return {name:"First Quarter", icon:"🌓",solunar:"Major"};
+  if(phase < 0.47)                  return {name:"Waxing Gibbous",icon:"🌔",solunar:"Minor"};
+  if(phase < 0.53)                  return {name:"Full Moon",     icon:"🌕",solunar:"Major"};
+  if(phase < 0.72)                  return {name:"Waning Gibbous",icon:"🌖",solunar:"Minor"};
+  if(phase < 0.78)                  return {name:"Last Quarter",  icon:"🌗",solunar:"Major"};
+  return                                    {name:"Waning Crescent",icon:"🌘",solunar:"Minor"};
+}
+
+// Solunar feeding periods (approx based on moon transit)
+function solunarTimes(date, lat, lon) {
+  var phase = moonPhase(date);
+  // Moon transit time approximation
+  var moonHour = (phase * 24 + lon/15) % 24;
+  var major1 = moonHour % 24;
+  var major2 = (moonHour + 12) % 24;
+  var minor1 = (moonHour + 6) % 24;
+  var minor2 = (moonHour + 18) % 24;
+  function fmt(h) {
+    var hh = Math.floor(h), mm = Math.round((h-hh)*60);
+    if(mm >= 60){hh++;mm=0;}
+    return String(hh%24).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+  }
+  return [
+    {type:"Major", time:fmt(major1), duration:"2 hrs", icon:"⭐⭐"},
+    {type:"Minor", time:fmt(minor1), duration:"1 hr",  icon:"⭐"},
+    {type:"Major", time:fmt(major2), duration:"2 hrs", icon:"⭐⭐"},
+    {type:"Minor", time:fmt(minor2), duration:"1 hr",  icon:"⭐"},
+  ].sort(function(a,b){ return a.time.localeCompare(b.time); });
+}
+
+// Barometric trend from forecast data
+function pressureTrend(days) {
+  if(!days || days.length < 2) return {trend:"unknown", color:"#888"};
+  var p0 = days[0].pressure || 1013;
+  var p1 = days[1].pressure || 1013;
+  var diff = p1 - p0;
+  if(diff > 2)  return {trend:"rising",  change:"+"+diff.toFixed(0)+"mb", color:"#44cc66", fish:"Good — rising pressure stimulates feeding"};
+  if(diff < -2) return {trend:"falling", change:diff.toFixed(0)+"mb",     color:"#ff8800", fish:"Brief flurry then slow — fish sense incoming front"};
+  return         {trend:"stable",  change:"±"+Math.abs(diff).toFixed(0)+"mb", color:"#4a9fd4", fish:"Stable pressure — consistent feeding patterns"};
+}
+
+// Water temperature estimate (air - offset by water type and season)
+function waterTemp(airTemp, waterType) {
+  var month = new Date().getMonth();
+  var seasonal = month >= 3 && month <= 8 ? 0 : -3; // summer vs winter offset
+  var offset = waterType === "sea" ? -2 : -1.5;
+  return +(airTemp + offset + seasonal).toFixed(1);
+}
+
+// River condition assessment
+function riverCondition(rainMm, rain3day) {
+  var total = rainMm + (rain3day || 0);
+  if(total >= 20) return {status:"Flood Risk",  color:"#ff2200", clarity:"Very coloured — near unfishable", flow:"High"};
+  if(total >= 10) return {status:"Coloured",    color:"#ff8800", clarity:"Coloured — fish close to bank", flow:"Medium-high"};
+  if(total >= 4)  return {status:"Fining Down", color:"#ffcc00", clarity:"Slightly coloured — often productive", flow:"Medium"};
+  return           {status:"Clear",       color:"#44cc66", clarity:"Clear — fish spooky, use lighter tackle", flow:"Normal"};
+}
+
+// Species rating for conditions
+function speciesRating(fish, waterT, pressureTrendVal, day) {
+  var score = 5;
+  // Temperature score
+  if(waterT >= fish.tempMin && waterT <= fish.tempMax) score += 2;
+  else if(waterT < fish.tempMin - 4 || waterT > fish.tempMax + 4) score -= 3;
+  else score -= 1;
+  // Pressure score
+  if(pressureTrendVal === fish.pressurePref) score += 2;
+  else if(pressureTrendVal === "falling" && fish.pressurePref !== "falling") score -= 1;
+  // Wind score
+  if(day.windMph <= 10) score += 1;
+  else if(day.windMph >= 25) score -= 2;
+  // Overcast bonus for many species
+  if(day.humidity >= 70 && day.rain < 30) score += 1;
+  return Math.max(1, Math.min(10, score));
+}
+
+function ratingColor(r) {
+  return r >= 8 ? "#44cc66" : r >= 6 ? "#88cc44" : r >= 4 ? "#ffcc00" : r >= 2 ? "#ff8800" : "#ff4400";
+}
+
+function ratingLabel(r) {
+  return r >= 8 ? "Excellent" : r >= 6 ? "Good" : r >= 4 ? "Fair" : r >= 2 ? "Poor" : "Very Poor";
+}
+
+function AnglingDashboard(props) {
+  var lat=props.lat, lon=props.lon, locationName=props.locationName, forecastData=props.forecastData, u=props.u||{temp:"C"};
+  var waterType = useState("fresh"); var iWaterType=waterType[0]; var setWaterType=waterType[1];
+  var dayIdx = useState(0); var iDayIdx=dayIdx[0]; var setDayIdx=dayIdx[1];
+  var tab = useState("overview"); var iTab=tab[0]; var setTab=tab[1];
+  var selFish = useState("carp"); var iSelFish=selFish[0]; var setSelFish=selFish[1];
+
+  function cvtT(c){return u.temp==="F"?+(c*9/5+32).toFixed(1):+c;}
+  function tUnit(){return u.temp==="F"?"°F":"°C";}
+
+  var days = forecastData||[];
+  if(!days.length) return null;
+  var day = days[Math.min(iDayIdx, days.length-1)];
+
+  var fishList = iWaterType==="sea" ? FISH_TYPES_SEA : FISH_TYPES_FRESH;
+  var selectedFish = fishList.find(function(f){return f.id===iSelFish;}) || fishList[0];
+
+  var waterT = waterTemp(day.temp, iWaterType);
+  var pTrend = pressureTrend(days.slice(iDayIdx, iDayIdx+2));
+  var riverCond = riverCondition(day.rainMm, days.slice(iDayIdx, iDayIdx+3).reduce(function(a,d){return a+d.rainMm;},0)-day.rainMm);
+  var moonInfo = moonPhaseName(moonPhase(day.date));
+  var solunar = solunarTimes(day.date, lat, lon);
+  var overallRating = speciesRating(selectedFish, waterT, pTrend.trend, day);
+
+  // 3-day rain total for river conditions
+  var rain3day = days.slice(iDayIdx, iDayIdx+3).reduce(function(a,d){return a+d.rainMm;},0);
+
+  var e = React.createElement;
+  var sectionSty = {background:"rgba(255,255,255,0.02)",border:"1px solid rgba(74,159,212,0.2)",borderRadius:16,padding:"18px 16px",marginBottom:16};
+  var tabs = [{id:"overview",label:"Overview"},{id:"solunar",label:"Solunar Tables"},{id:"species",label:"Species Guide"},{id:"conditions",label:"Conditions"},{id:"planning",label:"7-Day"}];
+
+  return e("div",{style:sectionSty},
+    // Header
+    e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}},
+      e("span",{style:{fontSize:20}},"🎣"),
+      e("div",{style:{flex:1}},
+        e("div",{style:{fontSize:13,color:"#88ddff",letterSpacing:2,textTransform:"uppercase"}},"Angling & Fishing"),
+        e("div",{style:{fontSize:10,color:"#555",marginTop:1}},locationName)
+      ),
+      e("div",{style:{display:"flex",gap:6,padding:"4px 10px",borderRadius:12,background:ratingColor(overallRating)+"18",border:"1px solid "+ratingColor(overallRating)+"44"}},
+        e("span",{style:{fontSize:12,color:ratingColor(overallRating),fontWeight:"bold"}},ratingLabel(overallRating)),
+        e("span",{style:{fontSize:11,color:ratingColor(overallRating)}},overallRating+"/10")
+      )
+    ),
+
+    // Water type selector
+    e("div",{style:{display:"flex",gap:6,marginBottom:10}},
+      e("button",{onClick:function(){setWaterType("fresh");setSelFish("carp");},style:{padding:"5px 14px",borderRadius:10,border:"1px solid",borderColor:iWaterType==="fresh"?"#4a9fd4":"rgba(255,255,255,0.1)",background:iWaterType==="fresh"?"rgba(74,159,212,0.15)":"rgba(255,255,255,0.03)",color:iWaterType==="fresh"?"#88ddff":"#666",fontSize:11,cursor:"pointer"}},"🌊 Freshwater"),
+      e("button",{onClick:function(){setWaterType("sea");setSelFish("bass_s");},style:{padding:"5px 14px",borderRadius:10,border:"1px solid",borderColor:iWaterType==="sea"?"#4a9fd4":"rgba(255,255,255,0.1)",background:iWaterType==="sea"?"rgba(74,159,212,0.15)":"rgba(255,255,255,0.03)",color:iWaterType==="sea"?"#88ddff":"#666",fontSize:11,cursor:"pointer"}},"🌊 Sea/Saltwater")
+    ),
+
+    // Day selector
+    e("div",{style:{display:"flex",gap:4,marginBottom:14,overflowX:"auto",paddingBottom:4}},
+      days.slice(0,7).map(function(d,i){
+        var dWaterT = waterTemp(d.temp, iWaterType);
+        var dRating = speciesRating(selectedFish, dWaterT, pressureTrend(days.slice(i,i+2)).trend, d);
+        var on = iDayIdx===i;
+        return e("button",{key:i,onClick:function(){setDayIdx(i);},style:{flex:"0 0 auto",padding:"6px 10px",borderRadius:10,border:"1px solid",borderColor:on?ratingColor(dRating):"rgba(255,255,255,0.08)",background:on?"rgba(255,255,255,0.07)":"transparent",color:on?"#e8dcc8":"#666",fontSize:11,cursor:"pointer",minWidth:52,textAlign:"center"}},
+          e("div",{style:{fontSize:9,color:ratingColor(dRating),marginBottom:2}},"●"),
+          e("div",null,d.date.split(" ")[0])
+        );
+      })
+    ),
+
+    // Tabs
+    e("div",{style:{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:14,overflowX:"auto"}},
+      tabs.map(function(t){
+        var on=iTab===t.id;
+        return e("button",{key:t.id,onClick:function(){setTab(t.id);},style:{padding:"7px 12px",background:"none",border:"none",borderBottom:on?"2px solid #4a9fd4":"2px solid transparent",color:on?"#88ddff":"#555",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}},t.label);
+      })
+    ),
+
+    // ── Overview Tab ──
+    iTab==="overview" && e("div",null,
+      // Overall rating card
+      e("div",{style:{background:ratingColor(overallRating)+"15",border:"1px solid "+ratingColor(overallRating)+"44",borderRadius:12,padding:"14px",marginBottom:12}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:12}},
+          e("div",{style:{fontSize:36}},selectedFish.icon),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:14,color:"#e8dcc8",fontWeight:"bold",marginBottom:2}},selectedFish.label+" — "+ratingLabel(overallRating)+" Conditions"),
+            e("div",{style:{fontSize:11,color:"#9a8c7a",marginBottom:4}},selectedFish.notes),
+            e("div",{style:{display:"flex",gap:12,flexWrap:"wrap"}},
+              e("span",{style:{fontSize:11,color:"#4a9fd4"}},"💧 Water: "+cvtT(waterT)+tUnit()),
+              e("span",{style:{fontSize:11,color:pTrend.color}},"📊 Pressure: "+pTrend.trend),
+              e("span",{style:{fontSize:11,color:moonInfo.solunar==="Major"?"#ffdd00":"#aaa"}},""+moonInfo.icon+" "+moonInfo.name)
+            )
+          ),
+          e("div",{style:{textAlign:"center"}},
+            e("div",{style:{fontSize:32,fontWeight:"bold",color:ratingColor(overallRating)}},overallRating),
+            e("div",{style:{fontSize:10,color:"#666"}},"/10")
+          )
+        )
+      ),
+
+      // Quick conditions grid
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}},
+        [
+          {icon:"💧",label:"Water Temp",val:cvtT(waterT)+tUnit(),color:waterT>=selectedFish.tempMin&&waterT<=selectedFish.tempMax?"#44cc66":"#ff8800",sub:waterT<selectedFish.tempMin?"Below ideal":"Above ideal"},
+          {icon:"📊",label:"Pressure",val:pTrend.trend.toUpperCase(),color:pTrend.color,sub:pTrend.change||""},
+          {icon:"💨",label:"Wind",val:day.windMph+"mph",color:day.windMph<=10?"#44cc66":day.windMph<=20?"#ffcc00":"#ff8800",sub:day.windMph<=10?"Ideal for casting":day.windMph>=25?"Difficult casting":"Manageable"},
+          {icon:"🌡️",label:"Air Temp",val:cvtT(day.temp)+tUnit(),color:"#e8dcc8",sub:"Low: "+cvtT(day.low)+tUnit()},
+          {icon:"💧",label:"Rain",val:day.rainMm+"mm",color:day.rainMm>=10?"#ff8800":day.rainMm>=2?"#ffcc00":"#44cc66",sub:day.rain+"% chance"},
+          {icon:moonInfo.icon,label:"Moon Phase",val:moonInfo.name,color:moonInfo.solunar==="Major"?"#ffdd00":"#aaa",sub:"Solunar: "+moonInfo.solunar},
+        ].map(function(c,i){
+          return e("div",{key:i,style:{background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"10px 11px",border:"1px solid rgba(255,255,255,0.06)"}},
+            e("div",{style:{fontSize:10,color:"#555",marginBottom:3}},c.icon+" "+c.label),
+            e("div",{style:{fontSize:14,color:c.color,fontWeight:"bold"}},c.val),
+            c.sub&&e("div",{style:{fontSize:10,color:"#666",marginTop:1}},c.sub)
+          );
+        })
+      ),
+
+      // Pressure fish rating
+      e("div",{style:{padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",marginBottom:12}},
+        e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1,textTransform:"uppercase"}},"📊 Pressure Effect on Fishing"),
+        e("div",{style:{fontSize:12,color:pTrend.color}},pTrend.fish||"No pressure data available")
+      ),
+
+      // River conditions (freshwater only)
+      iWaterType==="fresh" && e("div",{style:{padding:"10px 12px",borderRadius:10,background:riverCond.color+"10",border:"1px solid "+riverCond.color+"44"}},
+        e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1,textTransform:"uppercase"}},"🌊 River Conditions"),
+        e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          e("span",{style:{fontSize:13,color:riverCond.color,fontWeight:"bold"}},riverCond.status),
+          e("span",{style:{fontSize:11,color:"#666"}},riverCond.clarity)
+        )
+      ),
+
+      // Tide reminder for sea
+      iWaterType==="sea" && e("div",{style:{padding:"10px 12px",borderRadius:10,background:"rgba(74,159,212,0.08)",border:"1px solid rgba(74,159,212,0.2)",fontSize:11,color:"#88ddff"}},
+        "🌊 Check the Sailing dashboard for full tide times. Sea fish are most active on the 2 hours either side of high water."
+      )
+    ),
+
+    // ── Solunar Tab ──
+    iTab==="solunar" && e("div",null,
+      e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"12px",background:"rgba(255,220,0,0.06)",borderRadius:12,border:"1px solid rgba(255,220,0,0.15)"}},
+        e("span",{style:{fontSize:32}},moonInfo.icon),
+        e("div",null,
+          e("div",{style:{fontSize:14,color:"#ffdd88",fontWeight:"bold"}},moonInfo.name),
+          e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:2}},"Solunar rating: "+moonInfo.solunar+" feeding period today"),
+          e("div",{style:{fontSize:10,color:"#555",marginTop:4}},"Major periods: moon overhead/underfoot (2hrs). Minor periods: moonrise/moonset (1hr).")
+        )
+      ),
+
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:10}},
+        "Best feeding times for "+day.date+" near "+locationName+" ("+lat.toFixed(2)+"°, "+lon.toFixed(2)+"°)"
+      ),
+
+      solunar.map(function(s,i){
+        return e("div",{key:i,style:{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:10,border:"1px solid",borderColor:s.type==="Major"?"rgba(255,220,0,0.3)":"rgba(255,255,255,0.08)",background:s.type==="Major"?"rgba(255,220,0,0.05)":"rgba(255,255,255,0.02)",marginBottom:6}},
+          e("div",{style:{fontSize:20}},s.icon),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:13,color:s.type==="Major"?"#ffdd88":"#9a8c7a",fontWeight:s.type==="Major"?"bold":"normal"}},s.type+" Feeding Period"),
+            e("div",{style:{fontSize:11,color:"#666",marginTop:1}},"Duration: "+s.duration)
+          ),
+          e("div",{style:{fontSize:16,color:s.type==="Major"?"#ffdd00":"#aaa",fontWeight:"bold"}},s.time)
+        );
+      }),
+
+      e("div",{style:{marginTop:12,padding:"8px 12px",background:"rgba(255,255,255,0.02)",borderRadius:8,fontSize:10,color:"#444",lineHeight:1.7}},
+        "⚠️ Solunar times are approximate and should be used as a guide alongside local conditions. Dawn and dusk feeding periods often coincide with major solunar periods for best results."
+      )
+    ),
+
+    // ── Species Guide Tab ──
+    iTab==="species" && e("div",null,
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:12}},"Conditions rated for each species today — "+day.date),
+      fishList.map(function(fish){
+        var wt = waterTemp(day.temp, iWaterType);
+        var pt = pressureTrend(days.slice(iDayIdx, iDayIdx+2));
+        var rating = speciesRating(fish, wt, pt.trend, day);
+        var isSelected = fish.id === iSelFish;
+        return e("div",{key:fish.id,
+          onClick:function(){setSelFish(fish.id);},
+          style:{padding:"10px 12px",borderRadius:10,border:"1px solid",borderColor:isSelected?ratingColor(rating)+"88":"rgba(255,255,255,0.06)",background:isSelected?ratingColor(rating)+"0f":"rgba(255,255,255,0.02)",marginBottom:6,cursor:"pointer"}},
+          e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+            e("span",{style:{fontSize:20}},fish.icon),
+            e("div",{style:{flex:1}},
+              e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}},fish.label),
+              e("div",{style:{fontSize:10,color:"#666",marginTop:1}},
+                "Ideal: "+fish.tempMin+"–"+fish.tempMax+"°C · Prefers: "+fish.pressurePref+" pressure"
+              )
+            ),
+            e("div",{style:{textAlign:"right"}},
+              e("div",{style:{fontSize:14,fontWeight:"bold",color:ratingColor(rating)}},rating+"/10"),
+              e("div",{style:{fontSize:10,color:ratingColor(rating)}},ratingLabel(rating))
+            )
+          ),
+          isSelected && e("div",{style:{marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:10,color:"#9a8c7a",lineHeight:1.6}},
+            fish.notes,
+            e("br",null),
+            e("span",{style:{color:fish.dawn?"#ffdd00":"#555"}},fish.dawn?"✓ Dawn feeder ":""),
+            e("span",{style:{color:fish.dusk?"#ffdd00":"#555"}},fish.dusk?"✓ Dusk feeder":"")
+          )
+        );
+      })
+    ),
+
+    // ── Conditions Tab ──
+    iTab==="conditions" && e("div",null,
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}},
+        // Water temp
+        e("div",{style:{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid rgba(74,159,212,0.2)",gridColumn:"1/-1"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"💧 WATER TEMPERATURE (ESTIMATED)"),
+          e("div",{style:{fontSize:22,color:"#4a9fd4",fontWeight:"bold"}},cvtT(waterT),e("span",{style:{fontSize:11,color:"#666",marginLeft:3}},tUnit())),
+          e("div",{style:{fontSize:10,color:"#666",marginTop:4}},"Based on air temp ("+cvtT(day.temp)+tUnit()+") adjusted for "+iWaterType+" water thermal lag and season"),
+          e("div",{style:{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}},
+            fishList.slice(0,4).map(function(f){
+              var inRange = waterT>=f.tempMin && waterT<=f.tempMax;
+              return e("span",{key:f.id,style:{fontSize:10,padding:"2px 8px",borderRadius:12,background:inRange?"rgba(68,204,102,0.12)":"rgba(255,255,255,0.04)",color:inRange?"#44cc66":"#555",border:"1px solid",borderColor:inRange?"rgba(68,204,102,0.3)":"rgba(255,255,255,0.06)"}},
+                f.icon+" "+f.label+": "+(inRange?"✓":"✗")
+              );
+            })
+          )
+        ),
+
+        // Wind & casting
+        e("div",{style:{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid rgba(255,255,255,0.07)"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"💨 WIND & CASTING"),
+          e("div",{style:{fontSize:18,color:day.windMph<=10?"#44cc66":day.windMph<=20?"#ffcc00":"#ff8800",fontWeight:"bold"}},day.windMph+"mph"),
+          e("div",{style:{fontSize:10,color:"#888",marginTop:2}},"Gusts: "+day.gustMph+"mph"),
+          e("div",{style:{fontSize:10,color:day.windMph<=10?"#44cc66":day.windMph<=20?"#ffcc00":"#ff8800",marginTop:4}},
+            day.windMph<=10?"✓ Ideal for all casting":day.windMph<=20?"⚠ Adjust casting angle":day.windMph<=30?"⚠ Use heavier leads/lures":"⛔ Very difficult casting conditions"
+          )
+        ),
+
+        // River conditions (freshwater)
+        iWaterType==="fresh" && e("div",{style:{background:riverCond.color+"0a",borderRadius:12,padding:"12px",border:"1px solid "+riverCond.color+"33"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"🌊 RIVER CONDITIONS"),
+          e("div",{style:{fontSize:16,color:riverCond.color,fontWeight:"bold"}},riverCond.status),
+          e("div",{style:{fontSize:10,color:"#888",marginTop:2}},"Flow: "+riverCond.flow),
+          e("div",{style:{fontSize:10,color:riverCond.color,marginTop:4}},riverCond.clarity)
+        ),
+
+        // Visibility
+        e("div",{style:{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid rgba(255,255,255,0.07)"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"☁️ SKY & LIGHT"),
+          e("div",{style:{fontSize:16,color:day.humidity>=70?"#88ddff":"#ffcc44",fontWeight:"bold"}},day.condition),
+          e("div",{style:{fontSize:10,color:"#888",marginTop:2}},"Cloud cover proxy: "+day.humidity+"%RH"),
+          e("div",{style:{fontSize:10,color:day.humidity>=60?"#44cc66":"#ffcc00",marginTop:4}},
+            day.humidity>=70?"✓ Overcast — fish less cautious":"Bright conditions — fish shy, fish deeper or early/late"
+          )
+        )
+      ),
+
+      // Pressure detail
+      e("div",{style:{padding:"12px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}},
+        e("div",{style:{fontSize:10,color:"#555",marginBottom:8,letterSpacing:1,textTransform:"uppercase"}},"📊 Barometric Pressure Analysis"),
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:8}},
+          e("span",{style:{fontSize:14,color:pTrend.color,fontWeight:"bold"}},pTrend.trend.charAt(0).toUpperCase()+pTrend.trend.slice(1)+" Pressure"),
+          pTrend.change && e("span",{style:{fontSize:11,color:"#666"}},pTrend.change+" since yesterday")
+        ),
+        e("div",{style:{fontSize:11,color:pTrend.color,marginBottom:4}},pTrend.fish),
+        e("div",{style:{fontSize:10,color:"#444",lineHeight:1.7}},
+          "Rising: fish feed actively near surface. Falling: brief feeding then shutdown. Stable high: consistent feeding patterns. Stable low: slower, bottom fishing better."
+        )
+      )
+    ),
+
+    // ── 7-Day Planning Tab ──
+    iTab==="planning" && e("div",null,
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:12}},"Tap a day for full detail · "+selectedFish.icon+" "+selectedFish.label),
+      days.slice(0,7).map(function(d,i){
+        var dWaterT = waterTemp(d.temp, iWaterType);
+        var dPt = pressureTrend(days.slice(i, i+2));
+        var dRating = speciesRating(selectedFish, dWaterT, dPt.trend, d);
+        var dMoon = moonPhaseName(moonPhase(d.date));
+        return e("div",{key:i,
+          onClick:function(){setDayIdx(i);setTab("overview");},
+          style:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",marginBottom:6,background:iDayIdx===i?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)",cursor:"pointer"}},
+          e("div",{style:{width:3,height:40,borderRadius:2,background:ratingColor(dRating),flexShrink:0}}),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8"}},d.date),
+            e("div",{style:{fontSize:10,color:"#666",marginTop:1}},
+              d.condition+" · Air: "+cvtT(d.temp)+tUnit()+" · Water: ~"+cvtT(dWaterT)+tUnit()+" · "+d.windMph+"mph · "+dMoon.icon+" "+dMoon.name
+            )
+          ),
+          e("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+            e("span",{style:{fontSize:11,color:dPt.color}},dPt.trend==="rising"?"↑":dPt.trend==="falling"?"↓":"→"),
+            e("div",{style:{textAlign:"right"}},
+              e("div",{style:{fontSize:13,fontWeight:"bold",color:ratingColor(dRating)}},dRating+"/10"),
+              e("div",{style:{fontSize:10,color:ratingColor(dRating)}},ratingLabel(dRating))
+            )
+          )
+        );
+      })
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));
 } catch(e) {
   document.getElementById("root").innerHTML = '<div style="color:#ff6666;padding:20px;font-family:monospace;background:#0a0a1a;min-height:100vh;font-size:12px"><div style="color:#ff9944;font-size:16px;margin-bottom:12px">Runtime Error</div><b>'+e.name+':</b> '+e.message+'<br><br><pre style="white-space:pre-wrap;font-size:10px">'+e.stack+'</pre></div>';
 }
