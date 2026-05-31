@@ -1281,8 +1281,8 @@ return React.createElement('div', { key: i, style: {background:"rgba(255,255,255
 )
 );
 }
-
-
+</script>
+<script>
 function WeatherExtremes(props){
 var forecastData=props.forecastData,locationName=props.locationName,u=props.u;
 var lr=useState([]);var iLr=lr[0];var setLr=lr[1];
@@ -2106,6 +2106,8 @@ React.createElement('tr', { key: i, style: {background:i%2===0?"rgba(255,255,255
 )
 );
 }
+</script>
+<script>
 function MeteoDashboard(props){
 var lat=props.lat,lon=props.lon,locationName=props.locationName,forecastData=props.forecastData,u=props.u||{temp:"C",speed:"mph"};
 function cvtT(c){ return u.temp==="F"?+(c*9/5+32).toFixed(1):+c.toFixed(1); }
@@ -3218,6 +3220,8 @@ return React.createElement('div', { key: i, style: {padding:"12px 14px",borderRa
 )
 );
 }
+</script>
+<script>
 function App(){
 var fd=useState([]);var iFd=fd[0];var setFd=fd[1];
 var hr=useState(null);var iHr=hr[0];var setHr=hr[1];
@@ -3877,7 +3881,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 } catch(e) {
   document.getElementById("root").innerHTML = '<div style="color:#ff6666;padding:20px;font-family:monospace;background:#0a0a1a;min-height:100vh;font-size:12px"><div style="color:#ff9944;font-size:16px;margin-bottom:12px">Runtime Error</div><b>'+e.name+':</b> '+e.message+'<br><br><pre style="white-space:pre-wrap;font-size:10px">'+e.stack+'</pre></div>';
 }
-
 </script>
 
 </body>
