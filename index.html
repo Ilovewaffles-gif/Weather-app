@@ -2108,6 +2108,8 @@ React.createElement('tr', { key: i, style: {background:i%2===0?"rgba(255,255,255
 }
 </script>
 <script>
+var _jsxFileName="";
+var _jsxFileName="";
 function MeteoDashboard(props){
 var lat=props.lat,lon=props.lon,locationName=props.locationName,forecastData=props.forecastData,u=props.u||{temp:"C",speed:"mph"};
 function cvtT(c){ return u.temp==="F"?+(c*9/5+32).toFixed(1):+c.toFixed(1); }
@@ -3214,13 +3216,11 @@ return React.createElement('div', { key: i, style: {padding:"12px 14px",borderRa
 , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Rain days: "  , React.createElement('span', { style: {color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return d.rainMm>=2;}).length))
 )
 )
-)
-)
-)
-);
-}
+<script>
+var _jsxFileName="";
 </script>
 <script>
+var _jsxFileName="";
 function App(){
 var fd=useState([]);var iFd=fd[0];var setFd=fd[1];
 var hr=useState(null);var iHr=hr[0];var setHr=hr[1];
@@ -3451,6 +3451,8 @@ React.createElement('div', {}
 , iRoles.includes("sailing")&&React.createElement(SailingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iRoles.includes("farming")&&React.createElement(FarmingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iRoles.includes("angling")&&React.createElement(AnglingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
+, iRoles.includes("ski")&&React.createElement(SkiDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
+, iRoles.includes("ski")&&React.createElement(SkiDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iAp==="overview"&&React.createElement(WeatherOverview, { forecastData: iFd, locationName: iLn, u: u, hourlyRaw: iHr, lat: iLat, lon: iLon})
 , iAp==="ten"&&React.createElement(TenDayForecast, { forecastData: iFd, u: u})
 , iAp==="hourly"&&React.createElement(HourlyForecast, { forecastData: iFd, hourlyRaw: iHr, u: u})
@@ -3876,9 +3878,899 @@ function AnglingDashboard(props) {
   );
 }
 
+
+// ── Ski & Snow Sports Dashboard ───────────────────────────────────────────────
+
+var SKI_SPORTS = [
+  {id:"downhill",   icon:"⛷️",  label:"Downhill / Piste",   windMax:45, visMin:100, desc:"Groomed piste skiing"},
+  {id:"snowboard",  icon:"🏂",  label:"Snowboarding",        windMax:45, visMin:100, desc:"Piste & park riding"},
+  {id:"nordic",     icon:"🎿",  label:"Cross-Country",       windMax:35, visMin:200, desc:"Nordic / groomed trails"},
+  {id:"backcountry",icon:"🏔️", label:"Backcountry / Off-Piste",windMax:30,visMin:300,desc:"Ungroomed, avalanche terrain"},
+];
+
+// Wind chill formula (°C, mph)
+function windChill(tempC, windMph) {
+  if(tempC > 10 || windMph < 3) return tempC;
+  var v = windMph * 1.60934; // to km/h
+  return +(13.12 + 0.6215*tempC - 11.37*Math.pow(v,0.16) + 0.3965*tempC*Math.pow(v,0.16)).toFixed(1);
+}
+
+// Frostbite risk from wind chill
+function frostbiteRisk(wc) {
+  if(wc <= -35) return {level:"Extreme",   color:"#ff0000", time:"< 5 min exposed skin", icon:"❄️❄️❄️"};
+  if(wc <= -25) return {level:"High",      color:"#ff4400", time:"10–30 min",             icon:"❄️❄️"};
+  if(wc <= -15) return {level:"Moderate",  color:"#ff8800", time:"30–60 min",             icon:"❄️"};
+  if(wc <= -5)  return {level:"Low",       color:"#ffcc00", time:"Several hours",         icon:"🥶"};
+  return              {level:"Minimal",   color:"#44cc66", time:"No significant risk",   icon:"✓"};
+}
+
+// Avalanche risk (simplified EAWS scale 1-5)
+function avalancheRisk(day, prev) {
+  var score = 1;
+  // New snowfall
+  if(day.rainMm >= 20) score += 3;
+  else if(day.rainMm >= 10) score += 2;
+  else if(day.rainMm >= 5) score += 1;
+  // Wind loading
+  if(day.windMph >= 35) score += 2;
+  else if(day.windMph >= 20) score += 1;
+  // Rapid warming
+  if(prev && day.temp - prev.temp > 5) score += 1;
+  // Temp near zero (wet snow)
+  if(day.temp >= -2 && day.temp <= 2) score += 1;
+  score = Math.min(5, Math.max(1, score));
+  var levels = [
+    null,
+    {n:1, label:"Low",      color:"#44cc66", desc:"Generally safe conditions. Normal caution."},
+    {n:2, label:"Limited",  color:"#aacc22", desc:"Heightened avalanche conditions on steep slopes."},
+    {n:3, label:"Considerable",color:"#ffcc00",desc:"Dangerous conditions. Careful route assessment required."},
+    {n:4, label:"High",     color:"#ff8800", desc:"Very dangerous. Avoid avalanche terrain."},
+    {n:5, label:"Very High",color:"#ff2200", desc:"Extraordinary situation. Avoid all open slopes."},
+  ];
+  return levels[score];
+}
+
+// Piste condition from temp + recent snow
+function pisteCondition(temp, rainMm, windMph) {
+  if(temp > 3 && rainMm > 2)  return {cond:"Slushy",     color:"#ff8800", icon:"💧", desc:"Wet heavy snow — hard work, slow edges"};
+  if(temp > 3)                return {cond:"Spring Snow", color:"#ffcc00", icon:"🌤", desc:"Afternoon softening — best in the morning"};
+  if(rainMm >= 10)            return {cond:"Powder",      color:"#88ddff", icon:"❄️",desc:"Fresh snow — excellent off-piste, variable piste"};
+  if(rainMm >= 3)             return {cond:"Packed Powder",color:"#4a9fd4",icon:"⛷️",desc:"Good all-round conditions"};
+  if(temp < -10 && windMph > 20) return {cond:"Wind-Packed",color:"#ffaa00",icon:"💨",desc:"Hard wind slab — beware icy patches"};
+  if(temp < -5)               return {cond:"Hard Pack",   color:"#ffcc44", icon:"🧊", desc:"Firm surface — sharp edges needed"};
+  return                             {cond:"Groomed",     color:"#44cc66", icon:"✅", desc:"Well groomed, good grip"};
+}
+
+// Lift operational assessment (FIS/European standard)
+function liftAssessment(windMph, gustMph, vis, temp) {
+  var wc = windChill(temp, windMph);
+  if(gustMph >= 55) return {status:"Closed",  color:"#ff2200", reason:"Gusts "+gustMph+"mph — above emergency closure threshold (55mph)"};
+  if(windMph >= 45) return {status:"Closed",  color:"#ff2200", reason:"Wind "+windMph+"mph — exceeds lift operational limit (45mph)"};
+  if(vis < 50)      return {status:"Closed",  color:"#ff2200", reason:"Visibility "+vis+"m — white-out conditions"};
+  if(gustMph >= 40) return {status:"Reduced", color:"#ff8800", reason:"Gusts "+gustMph+"mph — high-speed lifts may close"};
+  if(windMph >= 35) return {status:"Reduced", color:"#ff8800", reason:"Strong winds — gondolas and chairs may be limited"};
+  if(vis < 150)     return {status:"Reduced", color:"#ff8800", reason:"Poor visibility "+vis+"m — runs may be closed"};
+  if(wc <= -25)     return {status:"Caution", color:"#ffcc00", reason:"Extreme wind chill "+wc+"°C — limit exposure time"};
+  return                   {status:"Open",    color:"#44cc66", reason:"Conditions within operational parameters"};
+}
+
+// Visibility proxy from humidity + condition
+function visibilityEst(day) {
+  if(day.condition && (day.condition.includes("🌫") || day.humidity >= 95)) return 50;
+  if(day.rain >= 80 || day.humidity >= 90) return 150;
+  if(day.rain >= 50 || day.humidity >= 80) return 400;
+  return 1000;
+}
+
+// UV at altitude (increases ~10% per 1000m)
+function altitudeUV(uvBase, altM) {
+  var alt = altM || 1500; // default ski resort altitude
+  return +(uvBase * (1 + alt/10000)).toFixed(1);
+}
+
+// Freeze-thaw risk
+function freezeThaw(tempMax, tempMin) {
+  if(tempMax > 0 && tempMin < 0) return {risk:"High",   color:"#ff8800", desc:"Thaw/refreeze overnight — black ice morning"};
+  if(tempMax > 2 && tempMin < 2) return {risk:"Moderate",color:"#ffcc00",desc:"Possible freeze-thaw — check morning conditions"};
+  return                                {risk:"Low",    color:"#44cc66", desc:"No significant freeze-thaw cycle"};
+}
+</script>
+<script>
+var _jsxFileName="";
+function SkiDashboard(props) {
+  var lat=props.lat, lon=props.lon, locationName=props.locationName, forecastData=props.forecastData, u=props.u||{temp:"C",speed:"mph"};
+  var sport = useState("downhill"); var iSport=sport[0]; var setSport=sport[1];
+  var dayIdx = useState(0); var iDayIdx=dayIdx[0]; var setDayIdx=dayIdx[1];
+  var tab = useState("summary"); var iTab=tab[0]; var setTab=tab[1];
+  var altM = useState(1500); var iAltM=altM[0]; var setAltM=altM[1];
+
+  function cvtT(c){return u.temp==="F"?+(c*9/5+32).toFixed(1):+c;}
+  function tUnit(){return u.temp==="F"?"°F":"°C";}
+
+  var days = forecastData||[];
+  if(!days.length) return null;
+  var day = days[Math.min(iDayIdx,days.length-1)];
+  var prev = iDayIdx>0?days[iDayIdx-1]:null;
+  var sportObj = SKI_SPORTS.find(function(s){return s.id===iSport;})||SKI_SPORTS[0];
+
+  var wc = windChill(day.temp, day.windMph);
+  var fb = frostbiteRisk(wc);
+  var avy = avalancheRisk(day, prev);
+  var piste = pisteCondition(day.temp, day.rainMm, day.windMph);
+  var vis = visibilityEst(day);
+  var lift = liftAssessment(day.windMph, day.gustMph, vis, day.temp);
+  var ft = freezeThaw(day.temp, day.low);
+  var uvAlt = altitudeUV(day.uvMax||3, iAltM);
+
+  // Overall day rating
+  var dayScore = 10;
+  if(lift.status==="Closed") dayScore -= 4;
+  else if(lift.status==="Reduced") dayScore -= 2;
+  if(avy.n >= 4) dayScore -= 3;
+  else if(avy.n >= 3) dayScore -= 1;
+  if(day.windMph >= sportObj.windMax) dayScore -= 2;
+  if(vis < sportObj.visMin) dayScore -= 2;
+  if(fb.level==="Extreme"||fb.level==="High") dayScore -= 1;
+  dayScore = Math.max(1, dayScore);
+  var dayColor = dayScore>=8?"#44cc66":dayScore>=6?"#88cc44":dayScore>=4?"#ffcc00":dayScore>=2?"#ff8800":"#ff2200";
+  var dayLabel = dayScore>=8?"Excellent":dayScore>=6?"Good":dayScore>=4?"Fair":dayScore>=2?"Poor":"Dangerous";
+
+  var e = React.createElement;
+  var sectionSty = {background:"rgba(255,255,255,0.02)",border:"1px solid rgba(135,206,250,0.2)",borderRadius:16,padding:"18px 16px",marginBottom:16};
+  var tabs = [{id:"summary",label:"Summary"},{id:"activities",label:"Activity Cards"},{id:"snow",label:"Snow & Avalanche"},{id:"safety",label:"Safety"},{id:"planning",label:"7-Day"}];
+
+  return e("div",{style:sectionSty},
+    // Header
+    e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}},
+      e("span",{style:{fontSize:20}},"⛷️"),
+      e("div",{style:{flex:1}},
+        e("div",{style:{fontSize:13,color:"#aaddff",letterSpacing:2,textTransform:"uppercase"}},"Ski & Snow Sports"),
+        e("div",{style:{fontSize:10,color:"#555",marginTop:1}},locationName)
+      ),
+      e("div",{style:{display:"flex",gap:4,padding:"4px 10px",borderRadius:12,background:dayColor+"18",border:"1px solid "+dayColor+"44"}},
+        e("span",{style:{fontSize:12,color:dayColor,fontWeight:"bold"}},dayLabel),
+        e("span",{style:{fontSize:11,color:dayColor}},dayScore+"/10")
+      )
+    ),
+
+    // Sport selector
+    e("div",{style:{display:"flex",gap:5,marginBottom:10,flexWrap:"wrap"}},
+      SKI_SPORTS.map(function(s){
+        var on=iSport===s.id;
+        return e("button",{key:s.id,onClick:function(){setSport(s.id);},style:{padding:"5px 10px",borderRadius:10,border:"1px solid",borderColor:on?"#aaddff":"rgba(255,255,255,0.1)",background:on?"rgba(135,206,250,0.12)":"rgba(255,255,255,0.03)",color:on?"#aaddff":"#666",fontSize:11,cursor:"pointer"}},
+          s.icon+" "+s.label);
+      })
+    ),
+
+    // Altitude input
+    e("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:14}},
+      e("span",{style:{fontSize:10,color:"#555",letterSpacing:1}},"RESORT ALTITUDE:"),
+      e("input",{type:"number",value:iAltM,onChange:function(ev){setAltM(parseInt(ev.target.value)||1500);},style:{width:70,padding:"3px 8px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.05)",color:"#e8dcc8",fontSize:11}}),
+      e("span",{style:{fontSize:10,color:"#555"}},"m")
+    ),
+
+    // Day selector
+    e("div",{style:{display:"flex",gap:4,marginBottom:14,overflowX:"auto",paddingBottom:4}},
+      days.slice(0,7).map(function(d,i){
+        var dPrev=i>0?days[i-1]:null;
+        var dWc=windChill(d.temp,d.windMph);
+        var dFb=frostbiteRisk(dWc);
+        var dAvy=avalancheRisk(d,dPrev);
+        var dVis=visibilityEst(d);
+        var dLift=liftAssessment(d.windMph,d.gustMph,dVis,d.temp);
+        var dScore=10;
+        if(dLift.status==="Closed") dScore-=4;
+        else if(dLift.status==="Reduced") dScore-=2;
+        if(dAvy.n>=4) dScore-=3; else if(dAvy.n>=3) dScore-=1;
+        if(d.windMph>=sportObj.windMax) dScore-=2;
+        dScore=Math.max(1,dScore);
+        var dColor=dScore>=8?"#44cc66":dScore>=6?"#88cc44":dScore>=4?"#ffcc00":dScore>=2?"#ff8800":"#ff2200";
+        var on=iDayIdx===i;
+        return e("button",{key:i,onClick:function(){setDayIdx(i);},style:{flex:"0 0 auto",padding:"6px 10px",borderRadius:10,border:"1px solid",borderColor:on?dColor:"rgba(255,255,255,0.08)",background:on?"rgba(255,255,255,0.07)":"transparent",color:on?"#e8dcc8":"#666",fontSize:11,cursor:"pointer",minWidth:52,textAlign:"center"}},
+          e("div",{style:{fontSize:9,color:dColor,marginBottom:2}},"●"),
+          e("div",null,d.date.split(" ")[0])
+        );
+      })
+    ),
+
+    // Tabs
+    e("div",{style:{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:14,overflowX:"auto"}},
+      tabs.map(function(t){var on=iTab===t.id;return e("button",{key:t.id,onClick:function(){setTab(t.id);},style:{padding:"7px 12px",background:"none",border:"none",borderBottom:on?"2px solid #aaddff":"2px solid transparent",color:on?"#aaddff":"#555",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}},t.label);})
+    ),
+
+    // ── Summary Tab ──
+    iTab==="summary" && e("div",null,
+      // Piste condition banner
+      e("div",{style:{background:piste.color+"18",border:"1px solid "+piste.color+"44",borderRadius:12,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:12}},
+        e("span",{style:{fontSize:28}},piste.icon),
+        e("div",null,
+          e("div",{style:{fontSize:14,color:piste.color,fontWeight:"bold"}},"Piste: "+piste.cond),
+          e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:2}},piste.desc)
+        ),
+        e("div",{style:{marginLeft:"auto",textAlign:"right"}},
+          e("div",{style:{fontSize:11,color:lift.color,fontWeight:"bold"}},"Lifts: "+lift.status),
+          e("div",{style:{fontSize:10,color:"#555",marginTop:1}},"Wind: "+day.windMph+"mph")
+        )
+      ),
+      // Key metrics grid
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}},
+        [
+          {icon:"🌡️",label:"Temperature",val:cvtT(day.temp)+tUnit(),sub:"Low: "+cvtT(day.low)+tUnit(),color:day.temp<-15?"#88ccff":day.temp<0?"#aaddff":day.temp>5?"#ff8800":"#e8dcc8"},
+          {icon:"🥶",label:"Wind Chill",val:cvtT(wc)+tUnit(),sub:fb.level+" frostbite risk",color:fb.color},
+          {icon:"💨",label:"Wind",val:day.windMph+"mph",sub:"Gusts: "+day.gustMph+"mph",color:day.windMph>=45?"#ff2200":day.windMph>=30?"#ff8800":day.windMph>=20?"#ffcc00":"#44cc66"},
+          {icon:"❄️",label:"Fresh Snow",val:day.rainMm+"mm",sub:day.rain+"% probability",color:day.rainMm>=10?"#88ddff":day.rainMm>=3?"#4a9fd4":"#555"},
+          {icon:"👁️",label:"Visibility",val:vis>=1000?"Good":vis>=400?"Moderate":vis>=150?"Poor":"White-out",sub:vis+"m est.",color:vis>=400?"#44cc66":vis>=150?"#ffcc00":"#ff2200"},
+          {icon:"☀️",label:"UV at Altitude",val:uvAlt,sub:iAltM+"m — "+(uvAlt>=8?"Very High":uvAlt>=6?"High":uvAlt>=3?"Moderate":"Low"),color:uvAlt>=8?"#ff6600":uvAlt>=6?"#ffaa00":"#88cc44"},
+        ].map(function(c,i){
+          return e("div",{key:i,style:{background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"10px 11px",border:"1px solid rgba(255,255,255,0.06)"}},
+            e("div",{style:{fontSize:10,color:"#555",marginBottom:3}},c.icon+" "+c.label),
+            e("div",{style:{fontSize:14,color:c.color,fontWeight:"bold"}},c.val),
+            c.sub&&e("div",{style:{fontSize:10,color:"#666",marginTop:1}},c.sub)
+          );
+        })
+      ),
+      // Freeze-thaw
+      e("div",{style:{padding:"8px 12px",borderRadius:10,background:ft.color+"10",border:"1px solid "+ft.color+"33",fontSize:11}},
+        e("span",{style:{color:ft.color,fontWeight:"bold"}},"🌡️ Freeze-Thaw: "+ft.risk+" — "),
+        e("span",{style:{color:"#9a8c7a"}},ft.desc)
+      )
+    ),
+
+    // ── Activity Cards Tab ──
+    iTab==="activities" && e("div",null,
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:12}},day.date+" · "+sportObj.icon+" "+sportObj.label),
+      // Lift card
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+lift.color+"44",borderLeft:"3px solid "+lift.color,background:lift.color+"08",marginBottom:8}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4}},
+          e("span",{style:{fontSize:20}},"🚡"),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}},"Ski Lift Operations"),
+            e("div",{style:{fontSize:10,color:"#555"}},"FIS/European operational standard")
+          ),
+          e("span",{style:{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+lift.color,color:lift.color}},lift.status)
+        ),
+        e("div",{style:{fontSize:11,color:lift.color}},lift.reason)
+      ),
+      // Avalanche card
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+avy.color+"44",borderLeft:"3px solid "+avy.color,background:avy.color+"08",marginBottom:8}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4}},
+          e("span",{style:{fontSize:20}},"🏔️"),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}},"Avalanche Risk"),
+            e("div",{style:{fontSize:10,color:"#555"}},"EAWS scale 1–5")
+          ),
+          e("span",{style:{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+avy.color,color:avy.color}},"Level "+avy.n+": "+avy.label)
+        ),
+        e("div",{style:{fontSize:11,color:avy.color}},avy.desc)
+      ),
+      // Piste card
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+piste.color+"44",borderLeft:"3px solid "+piste.color,background:piste.color+"08",marginBottom:8}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4}},
+          e("span",{style:{fontSize:20}},piste.icon),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}},"Piste / Trail Conditions"),
+            e("div",{style:{fontSize:10,color:"#555"}},"Surface assessment")
+          ),
+          e("span",{style:{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+piste.color,color:piste.color}},piste.cond)
+        ),
+        e("div",{style:{fontSize:11,color:piste.color}},piste.desc)
+      ),
+      // Wind/frostbite card
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+fb.color+"44",borderLeft:"3px solid "+fb.color,background:fb.color+"08",marginBottom:8}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4}},
+          e("span",{style:{fontSize:20}},"🥶"),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}},"Wind Chill & Frostbite"),
+            e("div",{style:{fontSize:10,color:"#555"}},"Exposed skin on chairlifts / ridgelines")
+          ),
+          e("span",{style:{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+fb.color,color:fb.color}},fb.level)
+        ),
+        e("div",{style:{fontSize:11,color:fb.color}},"Wind chill: "+cvtT(wc)+tUnit()+" · "+fb.icon+" "+fb.time)
+      ),
+      // Sport-specific wind card
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+(day.windMph>=sportObj.windMax?"#ff2200":"#44cc66")+"44",borderLeft:"3px solid "+(day.windMph>=sportObj.windMax?"#ff2200":"#44cc66"),background:"rgba(255,255,255,0.02)",marginBottom:8}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4}},
+          e("span",{style:{fontSize:20}},"💨"),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}},sportObj.icon+" "+sportObj.label+" Wind Limit"),
+            e("div",{style:{fontSize:10,color:"#555"}},"Sport-specific threshold")
+          ),
+          e("span",{style:{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+(day.windMph>=sportObj.windMax?"#ff2200":"#44cc66"),color:day.windMph>=sportObj.windMax?"#ff2200":"#44cc66"}},day.windMph>=sportObj.windMax?"EXCEEDED":"WITHIN LIMIT")
+        ),
+        e("div",{style:{fontSize:11,color:"#9a8c7a"}},
+          "Current: "+day.windMph+"mph · "+sportObj.label+" limit: "+sportObj.windMax+"mph · Gusts: "+day.gustMph+"mph"
+        )
+      ),
+      e("div",{style:{fontSize:10,color:"#444",marginTop:8,lineHeight:1.6,padding:"8px 12px",background:"rgba(255,255,255,0.02)",borderRadius:8}},
+        "⚠️ Advisory only. Always check local resort avalanche bulletin, ski patrol notices, and lift status before heading out. Conditions change rapidly in mountain environments."
+      )
+    ),
+
+    // ── Snow & Avalanche Tab ──
+    iTab==="snow" && e("div",null,
+      // Avalanche scale visual
+      e("div",{style:{marginBottom:14}},
+        e("div",{style:{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}},"EAWS Avalanche Danger Scale"),
+        e("div",{style:{display:"flex",gap:3,borderRadius:10,overflow:"hidden",marginBottom:6}},
+          [{n:1,c:"#44cc66"},{n:2,c:"#aacc22"},{n:3,c:"#ffcc00"},{n:4,c:"#ff8800"},{n:5,c:"#ff2200"}].map(function(l){
+            var active=avy.n===l.n;
+            return e("div",{key:l.n,style:{flex:1,height:active?36:24,background:l.c,display:"flex",alignItems:"center",justifyContent:"center",fontSize:active?14:10,fontWeight:active?"bold":"normal",color:"#fff",transition:"height 0.2s",borderRadius:active?6:0}},l.n);
+          })
+        ),
+        e("div",{style:{padding:"10px 12px",background:avy.color+"15",border:"1px solid "+avy.color+"44",borderRadius:10}},
+          e("div",{style:{fontSize:13,color:avy.color,fontWeight:"bold",marginBottom:4}},"Level "+avy.n+": "+avy.label),
+          e("div",{style:{fontSize:11,color:"#9a8c7a"}},avy.desc)
+        )
+      ),
+      // Snow metrics
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}},
+        e("div",{style:{background:"rgba(135,206,250,0.05)",borderRadius:12,padding:"12px",border:"1px solid rgba(135,206,250,0.15)"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"❄️ SNOWFALL TODAY"),
+          e("div",{style:{fontSize:22,color:"#88ddff",fontWeight:"bold"}},day.rainMm,e("span",{style:{fontSize:11,color:"#666",marginLeft:3}},"mm")),
+          e("div",{style:{fontSize:10,color:"#666",marginTop:2}},day.rain+"% probability"),
+          e("div",{style:{fontSize:10,color:day.rainMm>=10?"#88ddff":day.rainMm>=3?"#4a9fd4":"#666",marginTop:4}},
+            day.rainMm>=20?"Heavy snowfall — excellent powder":""+
+            (day.rainMm>=10?"Good snowfall":"")+""+
+            (day.rainMm>=3?"Light snowfall — refreshing piste":"Dry — conditions depend on base")
+          )
+        ),
+        e("div",{style:{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid rgba(255,255,255,0.07)"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"🌡️ FREEZE-THAW"),
+          e("div",{style:{fontSize:16,color:ft.color,fontWeight:"bold"}},ft.risk+" Risk"),
+          e("div",{style:{fontSize:10,color:"#888",marginTop:2}},"Max: "+cvtT(day.temp)+tUnit()+" / Min: "+cvtT(day.low)+tUnit()),
+          e("div",{style:{fontSize:10,color:ft.color,marginTop:4}},ft.desc)
+        ),
+        e("div",{style:{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid rgba(255,255,255,0.07)"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"❄️ PISTE SURFACE"),
+          e("div",{style:{fontSize:14,color:piste.color,fontWeight:"bold"}},piste.icon+" "+piste.cond),
+          e("div",{style:{fontSize:10,color:"#9a8c7a",marginTop:4}},piste.desc)
+        ),
+        e("div",{style:{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px",border:"1px solid rgba(255,255,255,0.07)"}},
+          e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1}},"💨 WIND LOADING"),
+          e("div",{style:{fontSize:14,color:day.windMph>=35?"#ff2200":day.windMph>=20?"#ff8800":"#44cc66",fontWeight:"bold"}},
+            day.windMph>=35?"High Loading":day.windMph>=20?"Moderate":"Low Loading"
+          ),
+          e("div",{style:{fontSize:10,color:"#888",marginTop:2}},day.windMph+"mph · Gusts "+day.gustMph+"mph"),
+          e("div",{style:{fontSize:10,color:"#666",marginTop:4}},"Wind loading contributes to slab formation on lee slopes")
+        )
+      ),
+      // 7-day snowfall chart
+      e("div",{style:{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}},"7-Day Snowfall Forecast"),
+      e("div",{style:{display:"flex",alignItems:"flex-end",gap:3,height:60,marginBottom:4}},
+        days.slice(0,7).map(function(d,i){
+          var maxSnow=Math.max.apply(null,days.slice(0,7).map(function(x){return x.rainMm;}));
+          var ht=maxSnow>0?Math.round((d.rainMm/(maxSnow||1))*54)+4:4;
+          return e("div",{key:i,title:d.date+": "+d.rainMm+"mm",style:{flex:1,height:ht+"px",background:"rgba(135,206,250,"+(0.2+Math.min(d.rainMm/20,0.7))+")",borderRadius:"3px 3px 0 0",minHeight:4}});
+        })
+      ),
+      e("div",{style:{display:"flex",justifyContent:"space-between",fontSize:9,color:"#444"}},
+        days.slice(0,7).map(function(d,i){return e("span",{key:i},d.rainMm+"mm");})
+      )
+    ),
+
+    // ── Safety Tab ──
+    iTab==="safety" && e("div",null,
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:12}},"Safety assessment for "+sportObj.label),
+      // Frostbite risk detail
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+fb.color+"44",background:fb.color+"08",marginBottom:10}},
+        e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold",marginBottom:6}},"🥶 Frostbite Risk: "+fb.level),
+        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}},
+          e("div",{style:{fontSize:11,color:"#9a8c7a"}},"Wind chill: ",e("span",{style:{color:fb.color,fontWeight:"bold"}},cvtT(wc)+tUnit())),
+          e("div",{style:{fontSize:11,color:"#9a8c7a"}},"Exposure: ",e("span",{style:{color:fb.color}},fb.time))
+        ),
+        e("div",{style:{fontSize:10,color:"#555",lineHeight:1.7}},
+          fb.level==="Extreme"||fb.level==="High"
+            ?"Cover ALL exposed skin. Face mask, goggles, and insulated gloves essential. Limit chairlift exposure. Buddy check for white patches on skin every 30 mins."
+            :fb.level==="Moderate"
+            ?"Wear balaclava/neck warmer. Check extremities (nose, ears, fingers, toes) regularly."
+            :"Standard cold weather precautions sufficient. Layer up and stay dry."
+        )
+      ),
+      // Visibility/white-out
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+(vis<150?"#ff2200":vis<400?"#ffcc00":"#44cc66")+"44",background:"rgba(255,255,255,0.02)",marginBottom:10}},
+        e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold",marginBottom:4}},"👁️ Visibility: "+(vis>=1000?"Good":vis>=400?"Moderate":vis>=150?"Poor":"White-out conditions")+" (~"+vis+"m)"),
+        e("div",{style:{fontSize:11,color:vis<150?"#ff2200":vis<400?"#ffcc00":"#9a8c7a"}},
+          vis<150?"WHITE-OUT RISK: Stay on marked runs only. Do not enter off-piste. Wait for conditions to improve."
+          :vis<400?"Poor visibility: Follow piste markers carefully. Reduce speed. Avoid unfamiliar terrain."
+          :"Good visibility conditions for all sports."
+        )
+      ),
+      // UV protection
+      e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid "+(uvAlt>=6?"#ff8800":"rgba(255,255,255,0.08)"),background:"rgba(255,255,255,0.02)",marginBottom:10}},
+        e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold",marginBottom:4}},"☀️ UV Index at "+iAltM+"m: "+uvAlt+(uvAlt>=8?" — Very High":uvAlt>=6?" — High":uvAlt>=3?" — Moderate":" — Low")),
+        e("div",{style:{fontSize:11,color:"#9a8c7a"}},
+          uvAlt>=6?"Snow reflects up to 80% of UV. Apply SPF 50+ sunscreen to all exposed skin including under chin. UV-blocking goggles essential. Reapply every 2 hours."
+          :"Standard sun protection recommended. Snow reflection still increases UV exposure vs sea level."
+        )
+      ),
+      // Backcountry warning
+      iSport==="backcountry" && e("div",{style:{padding:"12px 14px",borderRadius:12,border:"1px solid #ff8800",background:"rgba(255,136,0,0.06)",marginBottom:10}},
+        e("div",{style:{fontSize:12,color:"#ff8800",fontWeight:"bold",marginBottom:6}},"⚠️ Backcountry / Off-Piste Checklist"),
+        ["Check local avalanche bulletin (EAWS / regional service) before every outing",
+         "Carry transceiver (beacon), probe, and shovel — and know how to use them",
+         "Never go alone — minimum 3 people recommended",
+         "File a route plan with someone not in your group",
+         "Current avalanche level: Level "+avy.n+" ("+avy.label+") — "+avy.desc,
+        ].map(function(item,i){
+          return e("div",{key:i,style:{fontSize:11,color:"#9a8c7a",marginBottom:4,paddingLeft:8,borderLeft:"2px solid rgba(255,136,0,0.3)"}},item);
+        })
+      )
+    ),
+
+    // ── 7-Day Planning Tab ──
+    iTab==="planning" && e("div",null,
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:12}},sportObj.icon+" "+sportObj.label+" — tap a day for full detail"),
+      days.slice(0,7).map(function(d,i){
+        var dPrev=i>0?days[i-1]:null;
+        var dWc=windChill(d.temp,d.windMph);
+        var dFb=frostbiteRisk(dWc);
+        var dAvy=avalancheRisk(d,dPrev);
+        var dVis=visibilityEst(d);
+        var dLift=liftAssessment(d.windMph,d.gustMph,dVis,d.temp);
+        var dPiste=pisteCondition(d.temp,d.rainMm,d.windMph);
+        var dScore=10;
+        if(dLift.status==="Closed") dScore-=4; else if(dLift.status==="Reduced") dScore-=2;
+        if(dAvy.n>=4) dScore-=3; else if(dAvy.n>=3) dScore-=1;
+        if(d.windMph>=sportObj.windMax) dScore-=2;
+        dScore=Math.max(1,dScore);
+        var dColor=dScore>=8?"#44cc66":dScore>=6?"#88cc44":dScore>=4?"#ffcc00":dScore>=2?"#ff8800":"#ff2200";
+        return e("div",{key:i,onClick:function(){setDayIdx(i);setTab("summary");},
+          style:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",marginBottom:6,background:iDayIdx===i?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)",cursor:"pointer"}},
+          e("div",{style:{width:3,height:44,borderRadius:2,background:dColor,flexShrink:0}}),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8"}},d.date),
+            e("div",{style:{fontSize:10,color:"#666",marginTop:1}},
+              dPiste.icon+" "+dPiste.cond+" · "+cvtT(d.temp)+tUnit()+" · "+d.windMph+"mph · "+d.rainMm+"mm · Avy: "+dAvy.n
+            )
+          ),
+          e("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+            e("span",{style:{fontSize:10,color:dLift.status==="Closed"?"#ff2200":dLift.status==="Reduced"?"#ff8800":"#44cc66"}},"🚡 "+dLift.status),
+            e("div",{style:{textAlign:"right"}},
+              e("div",{style:{fontSize:13,fontWeight:"bold",color:dColor}},dScore+"/10")
+            )
+          )
+        );
+      })
+    )
+  );
+}
+
+
+// ── Ski & Snow Sports Dashboard ───────────────────────────────────────────────
+
+var SKI_SPORTS = [
+  {id:"downhill",  icon:"⛷️",  label:"Downhill / Piste",   windLimit:50, desc:"Groomed runs, lifts"},
+  {id:"snowboard", icon:"🏂",  label:"Snowboarding",        windLimit:55, desc:"Piste & park riding"},
+  {id:"nordic",    icon:"🎿",  label:"Cross-Country",       windLimit:40, desc:"Nordic & groomed trails"},
+  {id:"backcountry",icon:"🏔️",label:"Backcountry / Off-Piste",windLimit:35,desc:"Ungroomed terrain"},
+];
+
+// Wind chill calculation (°C)
+function windChill(tempC, windMph) {
+  var windKph = windMph * 1.60934;
+  if(tempC > 10 || windKph < 4.8) return tempC;
+  return +(13.12 + 0.6215*tempC - 11.37*Math.pow(windKph,0.16) + 0.3965*tempC*Math.pow(windKph,0.16)).toFixed(1);
+}
+
+// Frostbite risk time estimate
+function frostbiteRisk(wc) {
+  if(wc > -10)  return {level:"Low",       color:"#44cc66", time:"No risk",        desc:"No frostbite risk"};
+  if(wc > -20)  return {level:"Moderate",  color:"#ffcc00", time:"30+ min",        desc:"Exposed skin at risk after 30 minutes"};
+  if(wc > -27)  return {level:"High",      color:"#ff8800", time:"10–30 min",      desc:"Frostbite possible in 10–30 minutes"};
+  if(wc > -35)  return {level:"Very High", color:"#ff4400", time:"5–10 min",       desc:"Frostbite likely within 10 minutes"};
+  return         {level:"Extreme",         color:"#ff0000", time:"Under 2 min",    desc:"Frostbite in minutes — cover all skin"};
+}
+
+// Avalanche risk (European Danger Scale 1-5)
+function avalancheRisk(newSnowCm, windMph, tempC, low) {
+  var score = 0;
+  // New snow loading
+  if(newSnowCm >= 30) score += 3;
+  else if(newSnowCm >= 20) score += 2;
+  else if(newSnowCm >= 10) score += 1;
+  // Wind slab formation
+  if(windMph >= 30) score += 2;
+  else if(windMph >= 20) score += 1;
+  // Temperature inversion / weak layer
+  if(tempC > 0) score += 1; // warm temps weaken snowpack
+  if(low < -15) score += 1; // very cold = faceting
+  var level = Math.min(5, Math.max(1, score));
+  var labels = ["","Low","Limited","Considerable","High","Very High"];
+  var colors = ["","#44cc66","#ffdd00","#ff8800","#ff4400","#cc0000"];
+  var descs = [
+    "",
+    "Natural avalanches unlikely. Safe on most terrain.",
+    "Natural avalanches unlikely. Human triggering possible on steep terrain.",
+    "Natural avalanches possible. Human triggering likely on steep slopes. Reduce exposure.",
+    "Natural and human-triggered avalanches likely. Avoid avalanche terrain.",
+    "Widespread natural avalanches expected. Stay off all avalanche terrain."
+  ];
+  return {level:level, label:labels[level], color:colors[level], desc:descs[level]};
+}
+
+// Piste condition from temp + recent snow + freeze-thaw
+function pisteCondition(tempC, low, newSnowCm, windMph, humidity) {
+  var freezeThaw = low < 0 && tempC > 1;
+  if(newSnowCm >= 15) return {type:"Powder",        icon:"❄️", color:"#88ccff", desc:"Fresh powder — excellent conditions. Watch for variable depth."};
+  if(newSnowCm >= 5)  return {type:"Fresh Snow",    icon:"🌨️", color:"#aaddff", desc:"Good cover of fresh snow. Grooming overnight will improve."};
+  if(tempC >= 2 && humidity >= 70) return {type:"Spring Snow", icon:"🌤️",color:"#ffdd88",desc:"Wet, heavy spring snow. Best morning skiing before softening."};
+  if(freezeThaw && tempC < 0) return {type:"Hard Pack",    icon:"🧊", color:"#88aaff", desc:"Frozen overnight refreeze. Firm and fast — edges critical."};
+  if(freezeThaw && tempC >= 0) return {type:"Icy Patches", icon:"⚠️",color:"#ff8800",desc:"Freeze-thaw creating icy patches. Extra caution on shaded runs."};
+  if(tempC < -5) return {type:"Packed Powder",icon:"⛷️",color:"#aaffcc",desc:"Cold packed powder. Good all-round conditions."};
+  if(tempC > 5)  return {type:"Slushy",       icon:"💧",color:"#ffaa44",desc:"Warm and slushy. Ski early morning for best conditions."};
+  return          {type:"Groomed",         icon:"✅",color:"#44cc66",desc:"Good groomed piste. Standard conditions."};
+}
+
+// Ski lift wind threshold (FIS / EN 12385 guidelines)
+function liftStatus(windMph, gustMph, vis, tempC) {
+  if(gustMph >= 65) return {status:"Closed",  color:"#ff2200", reason:"Gusts "+gustMph+"mph — all lifts closed (limit: 65mph)"};
+  if(windMph >= 50) return {status:"Closed",  color:"#ff2200", reason:"Wind "+windMph+"mph — above FIS operational limit"};
+  if(vis < 50)      return {status:"Closed",  color:"#ff2200", reason:"Visibility below 50m — white-out conditions"};
+  if(gustMph >= 45) return {status:"At Risk", color:"#ff8800", reason:"Gusts "+gustMph+"mph — lifts may close. Check with resort."};
+  if(windMph >= 35) return {status:"Reduced", color:"#ffcc00", reason:"Wind "+windMph+"mph — upper lifts may be suspended"};
+  if(tempC < -25)   return {status:"Reduced", color:"#ffcc00", reason:"Extreme cold ("+tempC+"°C) — some lifts may limit operation"};
+  return             {status:"Open",    color:"#44cc66", reason:"Conditions within lift operational parameters"};
+}
+
+// Visibility / white-out risk
+function visibilityRisk(humidity, rain, windMph, tempC) {
+  if(rain >= 60 && tempC < 0) return {level:"White-Out Risk",  color:"#ff4400", vis:"Under 50m",  desc:"Heavy snowfall with wind — navigation very difficult"};
+  if(windMph >= 35 && tempC < -5) return {level:"Blowing Snow", color:"#ff8800", vis:"50–200m",   desc:"Wind-driven snow reducing visibility significantly"};
+  if(humidity >= 95 && tempC <= 0) return {level:"Fog / Cloud",  color:"#ffcc00", vis:"100–500m",  desc:"Low cloud or freezing fog on upper mountain"};
+  if(rain >= 40 && tempC < 0)      return {level:"Snow Showers", color:"#ffdd88", vis:"500m+",     desc:"Snow showers reducing visibility intermittently"};
+  return                              {level:"Good",         color:"#44cc66", vis:"Clear",    desc:"Good visibility — no significant restrictions"};
+}
+
+// UV at altitude (increases ~4% per 300m — estimate 1500m resort altitude)
+function altitudeUV(uvBase, altitudeM) {
+  var extra = Math.floor((altitudeM||1500)/300) * 0.04;
+  return +(uvBase * (1 + extra)).toFixed(1);
+}
+
+// Hourly ski window assessment
+function skiWindowRating(windMph, tempC, vis, snow, sport) {
+  var sp = SKI_SPORTS.find(function(s){return s.id===sport;})||SKI_SPORTS[0];
+  var score = 8;
+  if(windMph >= sp.windLimit) return {score:0, status:"stop",   color:"#ff2200"};
+  if(windMph >= sp.windLimit*0.75) score -= 3;
+  else if(windMph >= sp.windLimit*0.5) score -= 1;
+  if(vis==="White-Out Risk") score -= 4;
+  else if(vis==="Blowing Snow") score -= 2;
+  if(tempC < -20) score -= 2;
+  else if(tempC < -15) score -= 1;
+  else if(tempC > 5) score -= 1;
+  if(snow==="Powder" || snow==="Fresh Snow") score += 1;
+  if(snow==="Icy Patches" || snow==="Slushy") score -= 1;
+  score = Math.max(0, Math.min(10, score));
+  var status = score >= 7 ? "go" : score >= 4 ? "caution" : "stop";
+  var color  = score >= 7 ? "#44cc66" : score >= 4 ? "#ffcc00" : "#ff4400";
+  return {score:score, status:status, color:color};
+}
+
+function SkiDashboard(props) {
+  var lat=props.lat,lon=props.lon,locationName=props.locationName,forecastData=props.forecastData,u=props.u||{temp:"C"};
+  var sport     = useState("downhill"); var iSport=sport[0];    var setSport=sport[1];
+  var dayIdx    = useState(0);          var iDayIdx=dayIdx[0];  var setDayIdx=dayIdx[1];
+  var tab       = useState("summary");  var iTab=tab[0];        var setTab=tab[1];
+  var altitudeM = useState(1500);       var iAlt=altitudeM[0];  var setAlt=altitudeM[1];
+
+  function cvtT(c){return u.temp==="F"?+(c*9/5+32).toFixed(1):+c;}
+  function tUnit(){return u.temp==="F"?"°F":"°C";}
+
+  var days = forecastData||[];
+  if(!days.length) return null;
+  var day = days[Math.min(iDayIdx,days.length-1)];
+
+  // Derived values
+  var wc     = windChill(day.temp, day.windMph);
+  var fbRisk = frostbiteRisk(wc);
+  var newSnowCm = day.rainMm * (day.temp <= 0 ? 8 : 0); // snow ratio estimate
+  var avRisk = avalancheRisk(newSnowCm, day.windMph, day.temp, day.low);
+  var piste  = pisteCondition(day.temp, day.low, newSnowCm, day.windMph, day.humidity);
+  var lift   = liftStatus(day.windMph, day.gustMph, day.condition.includes("🌫")?40:5000, day.temp);
+  var vis    = visibilityRisk(day.humidity, day.rain, day.windMph, day.temp);
+  var uvAlt  = altitudeUV(day.uvMax||3, iAlt);
+  var freezeThaw = day.low < 0 && day.temp > 1;
+  var sp     = SKI_SPORTS.find(function(s){return s.id===iSport;})||SKI_SPORTS[0];
+  var overallWR = skiWindowRating(day.windMph, day.temp, vis.level, piste.type, iSport);
+
+  // Hourly windows (estimated from daily data with diurnal pattern)
+  var hourlyWindows = [6,8,9,10,11,12,13,14,15,16].map(function(h){
+    var tempH = day.temp + (h < 9 ? -3 : h > 13 ? -1 : 2);
+    var windH = day.windMph * (h < 9 ? 0.8 : h > 14 ? 1.1 : 1.0);
+    var wcH   = windChill(tempH, windH);
+    var visH  = visibilityRisk(day.humidity, h > 12 ? day.rain*0.6 : day.rain*0.4, windH, tempH);
+    var pisteH= pisteCondition(tempH, day.low, h < 9 ? newSnowCm : 0, windH, day.humidity);
+    var wr    = skiWindowRating(windH, tempH, visH.level, pisteH.type, iSport);
+    return {hour:h, temp:tempH, wind:windH, wc:wcH, vis:visH.level, piste:pisteH.type, wr:wr};
+  });
+
+  var e = React.createElement;
+  var sectionSty = {background:"rgba(255,255,255,0.02)",border:"1px solid rgba(136,200,255,0.2)",borderRadius:16,padding:"18px 16px",marginBottom:16};
+  var tabs = [{id:"summary",label:"Summary"},{id:"safety",label:"Safety"},{id:"conditions",label:"Conditions"},{id:"hourly",label:"Hourly Window"},{id:"planning",label:"7-Day"}];
+
+  return e("div",{style:sectionSty},
+    // Header
+    e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}},
+      e("span",{style:{fontSize:20}},"⛷️"),
+      e("div",{style:{flex:1}},
+        e("div",{style:{fontSize:13,color:"#aaddff",letterSpacing:2,textTransform:"uppercase"}},"Ski & Snow Sports"),
+        e("div",{style:{fontSize:10,color:"#555",marginTop:1}},locationName)
+      ),
+      e("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+        e("div",{style:{padding:"4px 12px",borderRadius:12,background:lift.color+"18",border:"1px solid "+lift.color+"44",fontSize:11,color:lift.color,fontWeight:"bold"}},"Lifts: "+lift.status),
+        e("div",{style:{padding:"4px 12px",borderRadius:12,background:avRisk.color+"18",border:"1px solid "+avRisk.color+"44",fontSize:11,color:avRisk.color}},"Avalanche: "+avRisk.level)
+      )
+    ),
+
+    // Sport selector
+    e("div",{style:{display:"flex",gap:5,marginBottom:10,flexWrap:"wrap"}},
+      SKI_SPORTS.map(function(s){
+        var on=iSport===s.id;
+        return e("button",{key:s.id,onClick:function(){setSport(s.id);},style:{padding:"5px 10px",borderRadius:10,border:"1px solid",borderColor:on?"#88ccff":"rgba(255,255,255,0.1)",background:on?"rgba(136,200,255,0.15)":"rgba(255,255,255,0.03)",color:on?"#aaddff":"#666",fontSize:11,cursor:"pointer"}},s.icon+" "+s.label);
+      })
+    ),
+
+    // Altitude input
+    e("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:14,fontSize:11,color:"#666"}},
+      e("span",null,"Resort altitude (m):"),
+      e("input",{type:"range",min:500,max:4000,step:100,value:iAlt,onChange:function(ev){setAlt(parseInt(ev.target.value));},style:{flex:1,accentColor:"#88ccff"}}),
+      e("span",{style:{color:"#aaddff",minWidth:45}},iAlt+"m")
+    ),
+
+    // Day selector
+    e("div",{style:{display:"flex",gap:4,marginBottom:14,overflowX:"auto",paddingBottom:4}},
+      days.slice(0,7).map(function(d,i){
+        var dnsc = d.rainMm*(d.temp<=0?8:0);
+        var dwr  = skiWindowRating(d.windMph,d.temp,visibilityRisk(d.humidity,d.rain,d.windMph,d.temp).level,pisteCondition(d.temp,d.low,dnsc,d.windMph,d.humidity).type,iSport);
+        var on   = iDayIdx===i;
+        return e("button",{key:i,onClick:function(){setDayIdx(i);},style:{flex:"0 0 auto",padding:"6px 10px",borderRadius:10,border:"1px solid",borderColor:on?dwr.color:"rgba(255,255,255,0.08)",background:on?"rgba(255,255,255,0.07)":"transparent",color:on?"#e8dcc8":"#666",fontSize:11,cursor:"pointer",minWidth:52,textAlign:"center"}},
+          e("div",{style:{fontSize:9,color:dwr.color,marginBottom:2}},"●"),
+          e("div",null,d.date.split(" ")[0])
+        );
+      })
+    ),
+
+    // Tabs
+    e("div",{style:{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:14,overflowX:"auto"}},
+      tabs.map(function(t){
+        var on=iTab===t.id;
+        return e("button",{key:t.id,onClick:function(){setTab(t.id);},style:{padding:"7px 12px",background:"none",border:"none",borderBottom:on?"2px solid #88ccff":"2px solid transparent",color:on?"#aaddff":"#555",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}},t.label);
+      })
+    ),
+
+    // ── Summary Tab ──
+    iTab==="summary" && e("div",null,
+      // Piste condition hero card
+      e("div",{style:{background:piste.color+"18",border:"1px solid "+piste.color+"44",borderRadius:14,padding:"14px 16px",marginBottom:12}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:12}},
+          e("span",{style:{fontSize:32}},piste.icon),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:16,color:piste.color,fontWeight:"bold",marginBottom:2}},piste.type),
+            e("div",{style:{fontSize:11,color:"#9a8c7a"}},piste.desc)
+          ),
+          e("div",{style:{textAlign:"right"}},
+            e("div",{style:{fontSize:22,fontWeight:"bold",color:overallWR.color}},overallWR.score),
+            e("div",{style:{fontSize:10,color:"#666"}},"/10 "+sp.label)
+          )
+        )
+      ),
+
+      // Key conditions grid
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}},
+        [
+          {icon:"🌡️",label:"Air Temp",val:cvtT(day.temp)+tUnit(),color:day.temp<-15?"#cc88ff":day.temp<-5?"#88ccff":day.temp>2?"#ffaa44":"#aaddff",sub:"Feels like: "+cvtT(wc)+tUnit()},
+          {icon:"💨",label:"Wind",val:day.windMph+"mph",color:day.windMph>=sp.windLimit?"#ff2200":day.windMph>=sp.windLimit*0.7?"#ff8800":"#aaddff",sub:"Gusts: "+day.gustMph+"mph"},
+          {icon:"❄️",label:"New Snow Est.",val:newSnowCm>0?newSnowCm.toFixed(0)+"cm":"None",color:newSnowCm>=15?"#88ccff":newSnowCm>=5?"#aaddff":"#666",sub:newSnowCm>0?"Fresh snow":"No precipitation"},
+          {icon:"👁️",label:"Visibility",val:vis.level,color:vis.color,sub:vis.vis},
+          {icon:"☀️",label:"UV (Altitude)",val:uvAlt+"",color:uvAlt>=8?"#ff6600":uvAlt>=6?"#ffaa00":"#88cc44",sub:"At "+iAlt+"m — use SPF50"},
+          {icon:"🌡️",label:"Freeze-Thaw",val:freezeThaw?"Active":"None",color:freezeThaw?"#ff8800":"#44cc66",sub:freezeThaw?"Icy patches likely overnight":"Stable snowpack"},
+        ].map(function(c,i){
+          return e("div",{key:i,style:{background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"10px 11px",border:"1px solid rgba(255,255,255,0.06)"}},
+            e("div",{style:{fontSize:10,color:"#555",marginBottom:3}},c.icon+" "+c.label),
+            e("div",{style:{fontSize:13,color:c.color,fontWeight:"bold"}},c.val),
+            c.sub&&e("div",{style:{fontSize:10,color:"#666",marginTop:1}},c.sub)
+          );
+        })
+      ),
+
+      // Activity cards
+      e("div",{style:{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}},"Activity Assessment"),
+      [
+        {icon:"🚡",label:"Ski Lifts",result:{status:lift.status==="Open"?"go":lift.status==="Reduced"?"caution":"stop",color:lift.color,reason:lift.reason}},
+        {icon:"⛷️",label:"On-Piste "+sp.label,result:{status:overallWR.status,color:overallWR.color,reason:piste.desc+" Wind: "+day.windMph+"mph (limit "+sp.windLimit+"mph)"}},
+        {icon:"⛰️",label:"Backcountry / Off-Piste",result:{status:avRisk.level>=3?"stop":avRisk.level>=2?"caution":"go",color:avRisk.color,reason:"Avalanche danger: "+avRisk.label+" — "+avRisk.desc}},
+        {icon:"🧊",label:"Frostbite Risk",result:{status:fbRisk.level==="Low"?"go":fbRisk.level==="Moderate"?"caution":"stop",color:fbRisk.color,reason:fbRisk.desc+" (Wind chill: "+cvtT(wc)+tUnit()+")"}},
+      ].map(function(card,i){
+        return e("div",{key:i,style:{padding:"10px 14px",borderRadius:10,border:"1px solid "+card.result.color+"44",borderLeft:"3px solid "+card.result.color,background:card.result.color+"08",marginBottom:6}},
+          e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+            e("span",{style:{fontSize:18}},card.icon),
+            e("div",{style:{flex:1}},
+              e("div",{style:{fontSize:12,color:"#e8dcc8",fontWeight:"bold"}},card.label),
+              e("div",{style:{fontSize:10,color:card.result.color,marginTop:2}},card.result.reason)
+            ),
+            e("span",{style:{fontSize:11,padding:"2px 10px",borderRadius:12,border:"1px solid "+card.result.color,color:card.result.color}},card.result.status.toUpperCase())
+          )
+        );
+      })
+    ),
+
+    // ── Safety Tab ──
+    iTab==="safety" && e("div",null,
+      // Avalanche
+      e("div",{style:{padding:"14px",borderRadius:12,background:avRisk.color+"15",border:"1px solid "+avRisk.color+"44",marginBottom:10}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:8}},
+          e("span",{style:{fontSize:28}},"⛰️"),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:14,color:avRisk.color,fontWeight:"bold"}},"Avalanche Danger: "+avRisk.label+" (Level "+avRisk.level+"/5)"),
+            e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:2}},avRisk.desc)
+          )
+        ),
+        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,fontSize:10,color:"#666"}},
+          e("div",null,"New snow: "+(newSnowCm>0?newSnowCm.toFixed(0)+"cm":"None")),
+          e("div",null,"Wind: "+day.windMph+"mph"),
+          e("div",null,"Temp: "+cvtT(day.temp)+tUnit())
+        ),
+        avRisk.level >= 3 && e("div",{style:{marginTop:8,padding:"8px 10px",background:"rgba(255,50,0,0.1)",borderRadius:8,fontSize:11,color:"#ff8866"}},
+          "⚠️ Always carry avalanche transceiver, probe and shovel in avalanche terrain. Check local avalanche bulletin before heading out."
+        )
+      ),
+
+      // Frostbite
+      e("div",{style:{padding:"14px",borderRadius:12,background:fbRisk.color+"15",border:"1px solid "+fbRisk.color+"44",marginBottom:10}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:6}},
+          e("span",{style:{fontSize:24}},"🥶"),
+          e("div",null,
+            e("div",{style:{fontSize:13,color:fbRisk.color,fontWeight:"bold"}},"Frostbite Risk: "+fbRisk.level),
+            e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:1}},fbRisk.desc)
+          )
+        ),
+        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
+          e("div",{style:{fontSize:11,color:"#aaddff"}},"Air temp: "+cvtT(day.temp)+tUnit()),
+          e("div",{style:{fontSize:11,color:"#ff8888"}},"Wind chill: "+cvtT(wc)+tUnit()),
+          e("div",{style:{fontSize:11,color:fbRisk.color}},"Exposed skin: "+fbRisk.time),
+          e("div",{style:{fontSize:11,color:"#888"}},"Wind: "+day.windMph+"mph")
+        )
+      ),
+
+      // UV at altitude
+      e("div",{style:{padding:"14px",borderRadius:12,background:"rgba(255,160,0,0.08)",border:"1px solid rgba(255,160,0,0.2)",marginBottom:10}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:6}},
+          e("span",{style:{fontSize:24}},"☀️"),
+          e("div",null,
+            e("div",{style:{fontSize:13,color:uvAlt>=8?"#ff6600":uvAlt>=6?"#ffaa00":"#88cc44",fontWeight:"bold"}},"UV Index at "+iAlt+"m: "+uvAlt),
+            e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:1}},"Snow reflects up to 80% of UV — doubling exposure vs ground level")
+          )
+        ),
+        e("div",{style:{fontSize:11,color:"#888",lineHeight:1.6}},"At altitude snow reflection means UV can be double what it appears. Use SPF50+ on all exposed skin, UV-protective goggles and balaclava or buff.")
+      ),
+
+      // Lift wind status
+      e("div",{style:{padding:"14px",borderRadius:12,background:lift.color+"0f",border:"1px solid "+lift.color+"33",marginBottom:10}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          e("span",{style:{fontSize:24}},"🚡"),
+          e("div",null,
+            e("div",{style:{fontSize:13,color:lift.color,fontWeight:"bold"}},"Lift Status: "+lift.status),
+            e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:1}},lift.reason)
+          )
+        )
+      ),
+
+      // Visibility
+      e("div",{style:{padding:"14px",borderRadius:12,background:vis.color+"0f",border:"1px solid "+vis.color+"33"}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          e("span",{style:{fontSize:24}},"👁️"),
+          e("div",null,
+            e("div",{style:{fontSize:13,color:vis.color,fontWeight:"bold"}},vis.level),
+            e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:1}},vis.desc),
+            e("div",{style:{fontSize:10,color:"#555",marginTop:2}},"Visibility: "+vis.vis)
+          )
+        )
+      )
+    ),
+
+    // ── Conditions Tab ──
+    iTab==="conditions" && e("div",null,
+      e("div",{style:{padding:"14px",borderRadius:12,background:piste.color+"15",border:"1px solid "+piste.color+"44",marginBottom:12}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:12}},
+          e("span",{style:{fontSize:28}},piste.icon),
+          e("div",null,
+            e("div",{style:{fontSize:15,color:piste.color,fontWeight:"bold"}},piste.type),
+            e("div",{style:{fontSize:11,color:"#9a8c7a",marginTop:2}},piste.desc)
+          )
+        )
+      ),
+
+      e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}},
+        [
+          {label:"Surface Temp",val:cvtT(day.temp)+tUnit(),icon:"🌡️",color:day.temp<0?"#88ccff":"#ffaa44",sub:day.temp<0?"Below freezing":"Above freezing — softening"},
+          {label:"Overnight Low",val:cvtT(day.low)+tUnit(),icon:"🌙",color:day.low<-10?"#cc88ff":day.low<0?"#88ccff":"#ffaa44",sub:day.low<0?"Hard freeze overnight":"No freeze — surface softens"},
+          {label:"New Snow Est.",val:newSnowCm>0?newSnowCm.toFixed(0)+"cm":"0cm",icon:"❄️",color:newSnowCm>=10?"#88ccff":newSnowCm>=3?"#aaddff":"#555",sub:newSnowCm>=10?"Excellent — check for slabs":newSnowCm>=3?"Good fresh cover":"No significant snowfall"},
+          {label:"Freeze-Thaw",val:freezeThaw?"Yes":"No",icon:"🔄",color:freezeThaw?"#ff8800":"#44cc66",sub:freezeThaw?"Watch for icy runs AM":"Stable surface temperature"},
+          {label:"Wind Effect",val:day.windMph+"mph",icon:"💨",color:day.windMph>=30?"#ff8800":day.windMph>=15?"#ffcc00":"#44cc66",sub:day.windMph>=30?"Blowing snow, wind slabs":day.windMph>=15?"Drifting possible":"No significant wind effect"},
+          {label:"Snow Quality",val:piste.type,icon:"⛷️",color:piste.color,sub:"Based on temp + recent precipitation"},
+        ].map(function(c,i){
+          return e("div",{key:i,style:{background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"10px 11px",border:"1px solid rgba(255,255,255,0.06)"}},
+            e("div",{style:{fontSize:10,color:"#555",marginBottom:3}},c.icon+" "+c.label),
+            e("div",{style:{fontSize:13,color:c.color,fontWeight:"bold"}},c.val),
+            e("div",{style:{fontSize:10,color:"#555",marginTop:1}},c.sub)
+          );
+        })
+      ),
+
+      // Best time to ski today
+      e("div",{style:{padding:"10px 14px",borderRadius:10,background:"rgba(136,200,255,0.06)",border:"1px solid rgba(136,200,255,0.15)"}},
+        e("div",{style:{fontSize:10,color:"#555",marginBottom:4,letterSpacing:1,textTransform:"uppercase"}},"⏰ Best Time to Ski Today"),
+        e("div",{style:{fontSize:12,color:"#aaddff"}},
+          freezeThaw ? "Morning (08:00–11:00) for firm, groomed conditions before freeze-thaw softens the surface." :
+          piste.type==="Slushy" ? "Early morning (07:00–10:00) before warm temps make the snow heavy and slow." :
+          piste.type==="Powder" ? "All day — powder conditions are excellent throughout." :
+          "Mid-morning (09:00–12:00) once lifts are running and groomers have finished."
+        )
+      )
+    ),
+
+    // ── Hourly Window Tab ──
+    iTab==="hourly" && e("div",null,
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:12}},sp.icon+" "+sp.label+" · "+day.date+" · Estimated diurnal conditions"),
+      hourlyWindows.map(function(hw,i){
+        var hh = String(hw.hour).padStart(2,"0")+":00";
+        return e("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.05)",marginBottom:4,background:"rgba(255,255,255,0.02)"}},
+          e("div",{style:{width:3,height:36,borderRadius:2,background:hw.wr.color,flexShrink:0}}),
+          e("div",{style:{width:44,color:"#888",fontSize:11}},hh),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:11,color:"#e8dcc8"}},hw.piste+" · "+cvtT(hw.temp)+tUnit()+" · "+hw.wind.toFixed(0)+"mph"),
+            e("div",{style:{fontSize:10,color:"#555",marginTop:1}},"Feels: "+cvtT(hw.wc)+tUnit()+" · Vis: "+hw.vis)
+          ),
+          e("div",{style:{textAlign:"right"}},
+            e("div",{style:{fontSize:13,fontWeight:"bold",color:hw.wr.color}},hw.wr.score+"/10"),
+            e("span",{style:{fontSize:10,padding:"1px 8px",borderRadius:10,border:"1px solid "+hw.wr.color,color:hw.wr.color}},hw.wr.status.toUpperCase())
+          )
+        );
+      })
+    ),
+
+    // ── 7-Day Planning Tab ──
+    iTab==="planning" && e("div",null,
+      e("div",{style:{fontSize:11,color:"#555",marginBottom:12}},"7-day ski forecast · "+sp.icon+" "+sp.label),
+      days.slice(0,7).map(function(d,i){
+        var dnsc = d.rainMm*(d.temp<=0?8:0);
+        var dVis = visibilityRisk(d.humidity,d.rain,d.windMph,d.temp);
+        var dPiste = pisteCondition(d.temp,d.low,dnsc,d.windMph,d.humidity);
+        var dAvRisk = avalancheRisk(dnsc,d.windMph,d.temp,d.low);
+        var dWR = skiWindowRating(d.windMph,d.temp,dVis.level,dPiste.type,iSport);
+        var dWC = windChill(d.temp,d.windMph);
+        return e("div",{key:i,
+          onClick:function(){setDayIdx(i);setTab("summary");},
+          style:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",marginBottom:6,background:iDayIdx===i?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)",cursor:"pointer"}},
+          e("div",{style:{width:3,height:44,borderRadius:2,background:dWR.color,flexShrink:0}}),
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:12,color:"#e8dcc8"}},d.date),
+            e("div",{style:{fontSize:10,color:"#666",marginTop:1}},
+              dPiste.icon+" "+dPiste.type+" · "+cvtT(d.temp)+tUnit()+" · "+d.windMph+"mph · "+(dnsc>0?dnsc.toFixed(0)+"cm snow":"No snow")
+            ),
+            e("div",{style:{fontSize:10,color:"#555",marginTop:1}},
+              "Avalanche: "+dAvRisk.label+" · Vis: "+dVis.level
+            )
+          ),
+          e("div",{style:{textAlign:"right"}},
+            e("div",{style:{fontSize:14,fontWeight:"bold",color:dWR.color}},dWR.score+"/10"),
+            e("div",{style:{fontSize:10,color:dWR.color}},dWR.status.toUpperCase())
+          )
+        );
+      }),
+      e("div",{style:{marginTop:8,fontSize:10,color:"#444",lineHeight:1.6,padding:"8px 12px",background:"rgba(255,255,255,0.02)",borderRadius:8}},
+        "⚠️ Snow depth and avalanche data are estimated from surface weather. Always check the local avalanche bulletin (avalanche.org / sais.gov.uk) and resort snow report before heading out."
+      )
+    )
+  );
+}
+
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));
 } catch(e) {
   document.getElementById("root").innerHTML = '<div style="color:#ff6666;padding:20px;font-family:monospace;background:#0a0a1a;min-height:100vh;font-size:12px"><div style="color:#ff9944;font-size:16px;margin-bottom:12px">Runtime Error</div><b>'+e.name+':</b> '+e.message+'<br><br><pre style="white-space:pre-wrap;font-size:10px">'+e.stack+'</pre></div>';
+}
+</script>></div>';
 }
 </script>
 
