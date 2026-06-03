@@ -3211,14 +3211,18 @@ return React.createElement('div', { key: i, style: {padding:"12px 14px",borderRa
 , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Total GDD: "  , React.createElement('span', { style: {color:"#aaddaa",fontWeight:"bold"}}, gddByDay.reduce(function(a,b){return a+b.gdd;},0).toFixed(1)))
 , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Total ET₀: "  , React.createElement('span', { style: {color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,14).reduce(function(a,d){return a+calcET0(d.temp,d.low,d.windMph,d.humidity,d.uvMax||5);},0).toFixed(1), "mm"))
 , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Frost days: "  , React.createElement('span', { style: {color:"#88ccff",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return d.low<=0;}).length))
-, React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Spray days: "  , React.createElement('span', { style: {color:"#88cc66",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return sprayWindow(d).status==="go";}).length))
-, React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Harvest days: "  , React.createElement('span', { style: {color:"#ffcc44",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return harvestWindow(d).status==="go";}).length))
-, React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Rain days: "  , React.createElement('span', { style: {color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return d.rainMm>=2;}).length))
-)
-)
-)
-  
+      , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Spray days: "  , React.createElement('span', { style: {color:"#88cc66",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return sprayWindow(d).status==="go";}).length))
+      , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Harvest days: "  , React.createElement('span', { style: {color:"#ffcc44",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return harvestWindow(d).status==="go";}).length))
+      , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a"}}, "Rain days: "  , React.createElement('span', { style: {color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return d.rainMm>=2;}).length))
+      )
+      )
+      )
+    )
+  );
+}
+
 function App(){
+
 var fd=useState([]);var iFd=fd[0];var setFd=fd[1];
 var hr=useState(null);var iHr=hr[0];var setHr=hr[1];
 var ln=useState("Loading...");var iLn=ln[0];var setLn=ln[1];
