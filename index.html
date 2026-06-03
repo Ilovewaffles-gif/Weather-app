@@ -3453,7 +3453,6 @@ React.createElement('div', {}
 , iRoles.includes("farming")&&React.createElement(FarmingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iRoles.includes("angling")&&React.createElement(AnglingDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iRoles.includes("ski")&&React.createElement(SkiDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
-, iRoles.includes("ski")&&React.createElement(SkiDashboard, { lat: iLat, lon: iLon, locationName: iLn, forecastData: iFd, u: u})
 , iAp==="overview"&&React.createElement(WeatherOverview, { forecastData: iFd, locationName: iLn, u: u, hourlyRaw: iHr, lat: iLat, lon: iLon})
 , iAp==="ten"&&React.createElement(TenDayForecast, { forecastData: iFd, u: u})
 , iAp==="hourly"&&React.createElement(HourlyForecast, { forecastData: iFd, hourlyRaw: iHr, u: u})
