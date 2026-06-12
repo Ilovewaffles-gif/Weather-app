@@ -2386,12 +2386,20 @@ function navVisibility(d) {
 
 // Sunrise / sunset (simple approximation)
 function sunTimes(lat, dayOfYear) {
-  var P = Math.asin(0.39795 * Math.cos(0.2163108 + 2 * Math.atan(0.9671396 * Math.tan(0.00860 * (dayOfYear - 186)))));
-  var D = 24 - (24 / Math.PI) * Math.acos((Math.sin(0.8333 * Math.PI / 180) + Math.sin(lat * Math.PI / 180) * Math.sin(P)) / (Math.cos(lat * Math.PI / 180) * Math.cos(P)));
-  var rise = 12 - D / 2;
-  var set  = 12 + D / 2;
-  function fmt(h) { var hh = Math.floor(h), mm = Math.round((h - hh) * 60); if (mm >= 60){hh++;mm=0;} return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
-  return { rise: fmt(rise), set: fmt(set), daylight: D.toFixed(1) };
+  try {
+    var safeLat = Math.min(Math.max(lat || 51.5, -65), 65);
+    var P = Math.asin(0.39795 * Math.cos(0.2163108 + 2 * Math.atan(0.9671396 * Math.tan(0.00860 * (dayOfYear - 186)))));
+    var cosArg = (Math.sin(0.8333 * Math.PI / 180) + Math.sin(safeLat * Math.PI / 180) * Math.sin(P)) / (Math.cos(safeLat * Math.PI / 180) * Math.cos(P));
+    cosArg = Math.min(Math.max(cosArg, -1), 1); // clamp to valid acos domain
+    var D = 24 - (24 / Math.PI) * Math.acos(cosArg);
+    if (isNaN(D) || !isFinite(D)) D = 12;
+    var rise = 12 - D / 2;
+    var set  = 12 + D / 2;
+    function fmt(h) { var hh = Math.floor(h), mm = Math.round((h - hh) * 60); if (mm >= 60){hh++;mm=0;} return String(Math.max(0,hh)%24).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
+    return { rise: fmt(rise), set: fmt(set), daylight: Math.max(0,D).toFixed(1) };
+  } catch(e) {
+    return { rise: "06:00", set: "20:00", daylight: "14.0" };
+  }
 }
 
 // Overall hiking go/no-go for a trail type
