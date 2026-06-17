@@ -78,6 +78,7 @@ var NAV_ITEMS = [
   {id:"graphs",   label:"Weather Graphs",   icon:"📈"},
   {id:"radar",    label:"Map and Radar",    icon:"🗺️"},
   {id:"extremes", label:"Weather Extremes", icon:"🌡️"},
+  {id:"illness",  label:"Illness & Allergy",icon:"🤧"},
 ];
 
 var USER_ROLES = [
@@ -2158,6 +2159,596 @@ days.slice(0,7).map(function(d,i){var dWaterT=waterTemp(d.temp,iWaterType);var d
 )
 );
 }
+// ═══════════════════════════════════════════════════════════════════════════════
+// ILLNESS & ALLERGY DASHBOARD — paste this entire block into index.html
+// Place it just BEFORE the closing </script> tag of the third <script> block
+// (the one that ends with the AnglingDashboard code, before SkiDashboard).
+//
+// Then add this line inside the App component render, after the WeatherOverview
+// section renders (search for "iAp==="overview"&&React.createElement(WeatherOverview"):
+//
+//   , iAp==="overview"&&React.createElement(IllnessAllergyDashboard, {forecastData:iFd,u:u,lat:iLat,lon:iLon,locationName:iLn})
+//
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Scoring helpers ───────────────────────────────────────────────────────────
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// Risk label + colour from 0-10 score
+function illnessRiskMeta(score) {
+  if (score >= 9) return { label: "Extreme",   color: "#ff0000", bg: "rgba(255,0,0,0.14)"   };
+  if (score >= 7) return { label: "Very High",  color: "#ff4400", bg: "rgba(255,68,0,0.12)"  };
+  if (score >= 5) return { label: "High",       color: "#ff8800", bg: "rgba(255,136,0,0.10)" };
+  if (score >= 3) return { label: "Moderate",   color: "#ffcc00", bg: "rgba(255,204,0,0.09)" };
+  if (score >= 1) return { label: "Low",        color: "#88cc44", bg: "rgba(136,204,68,0.08)" };
+  return                  { label: "Very Low",  color: "#44cc88", bg: "rgba(68,204,136,0.06)" };
+}
+
+// Month helper (0 = Jan)
+function monthOf(dateStr) {
+  // dateStr is like "Mon 16 Jun" — extract month name
+  var months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+  var parts = dateStr.split(" ");
+  for (var i = 0; i < parts.length; i++) {
+    if (months[parts[i]] !== undefined) return months[parts[i]];
+  }
+  return new Date().getMonth();
+}
+
+// ── Individual scoring functions (return 0–10) ────────────────────────────────
+
+function scoreCommonCold(d, month) {
+  // High risk: cold/cool temps, high humidity, autumn/winter/spring
+  var s = 0;
+  var seasonal = (month <= 3 || month >= 9) ? 3 : (month <= 5 || month >= 7) ? 1 : 0;
+  s += seasonal;
+  if (d.temp < 5)       s += 3;
+  else if (d.temp < 10) s += 2;
+  else if (d.temp < 15) s += 1;
+  if (d.humidity >= 75) s += 2;
+  else if (d.humidity >= 60) s += 1;
+  if (d.rainMm >= 3)    s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreFlu(d, month) {
+  // Peak Nov–Mar, drops sharply in summer; cold, dry indoor air worsens spread
+  var s = 0;
+  var seasonal = (month >= 10 || month <= 2) ? 4 : (month === 3 || month === 9) ? 2 : 0;
+  s += seasonal;
+  if (d.temp < 2)       s += 3;
+  else if (d.temp < 8)  s += 2;
+  else if (d.temp < 14) s += 1;
+  if (d.humidity < 40)  s += 2; // dry air = virus survives longer
+  else if (d.humidity < 55) s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreGrassPollen(d, month) {
+  // Peak May–Aug UK; warm, dry, sunny, low wind spreads pollen further
+  var s = 0;
+  var seasonal = (month >= 4 && month <= 7) ? 5 : (month === 3 || month === 8) ? 2 : 0;
+  s += seasonal;
+  if (d.temp >= 18 && d.temp <= 28) s += 2;
+  else if (d.temp >= 14)            s += 1;
+  if (d.rain < 20 && d.rainMm < 1) s += 2;
+  else if (d.rain < 40)             s += 1;
+  if (d.windMph >= 5 && d.windMph <= 20) s += 1; // light breeze disperses pollen
+  if (d.humidity < 60)              s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreTreePollen(d, month) {
+  // Feb–May (birch, oak, ash); warm dry spring days
+  var s = 0;
+  var seasonal = (month >= 1 && month <= 4) ? 5 : (month === 5) ? 2 : 0;
+  s += seasonal;
+  if (d.temp >= 10 && d.temp <= 22) s += 2;
+  if (d.rain < 20 && d.rainMm < 1) s += 2;
+  if (d.humidity < 65)              s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreRagweedPollen(d, month) {
+  // Aug–Oct; warm dry late summer (more relevant US but present in southern UK)
+  var s = 0;
+  var seasonal = (month >= 7 && month <= 9) ? 5 : (month === 10) ? 1 : 0;
+  s += seasonal;
+  if (d.temp >= 15 && d.temp <= 28) s += 2;
+  if (d.rain < 25 && d.rainMm < 1) s += 2;
+  if (d.windMph >= 8)               s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreMold(d, month) {
+  // Year-round but peaks Aug–Nov; wet, warm, humid conditions
+  var s = 0;
+  var seasonal = (month >= 7 && month <= 10) ? 2 : 0;
+  s += seasonal;
+  if (d.humidity >= 80) s += 3;
+  else if (d.humidity >= 65) s += 2;
+  else if (d.humidity >= 55) s += 1;
+  if (d.rainMm >= 5)    s += 2;
+  else if (d.rainMm >= 2) s += 1;
+  if (d.temp >= 10 && d.temp <= 25) s += 1; // mold grows in moderate warmth
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreDustDander(d, month) {
+  // Higher indoors when windows closed (winter); dry air worsens
+  var s = 0;
+  var seasonal = (month <= 2 || month >= 10) ? 2 : 1;
+  s += seasonal;
+  if (d.humidity < 40)  s += 3; // very dry = dust airborne
+  else if (d.humidity < 55) s += 2;
+  else if (d.humidity < 65) s += 1;
+  if (d.windMph <= 5)   s += 2; // still air = dust settles indoors
+  if (d.temp < 8)       s += 1; // windows shut
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreAsthma(d, month) {
+  // Triggered by: cold air, high pollen, pollution, humidity extremes, thunderstorms
+  var s = 0;
+  var grassP  = scoreGrassPollen(d, month);
+  var moldP   = scoreMold(d, month);
+  s += Math.round(grassP * 0.3 + moldP * 0.2);
+  if (d.temp < 5)        s += 2;
+  else if (d.temp < 10)  s += 1;
+  if (d.humidity >= 85 || d.humidity < 35) s += 2;
+  else if (d.humidity >= 70)               s += 1;
+  if (d.condition && d.condition.includes("⛈")) s += 2; // thunderstorm asthma
+  if (d.windMph >= 25)   s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreCOPD(d, month) {
+  // Cold, damp, windy days; high pollution (proxied by pressure/inversion)
+  var s = 0;
+  if (d.temp < 2)        s += 3;
+  else if (d.temp < 8)   s += 2;
+  else if (d.temp < 14)  s += 1;
+  if (d.windMph >= 20)   s += 2; // cold wind = extra strain
+  if (d.humidity >= 80)  s += 2;
+  else if (d.humidity >= 70) s += 1;
+  if (d.pressure <= 1000) s += 1; // low pressure = less O2 available
+  var seasonal = (month <= 2 || month >= 10) ? 1 : 0;
+  s += seasonal;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreMigraine(d) {
+  // Triggers: pressure change, bright sun, heat, strong wind, humidity spikes
+  var s = 2; // base
+  if (d.condition && (d.condition.includes("☀") || d.condition.includes("🌡"))) s += 2;
+  if (d.temp >= 28)      s += 2;
+  else if (d.temp >= 24) s += 1;
+  if (d.windMph >= 20)   s += 1;
+  if (d.humidity >= 75 && d.temp >= 20) s += 1;
+  if (d.pressure < 1000) s += 2; // low pressure = vasodilation
+  else if (d.pressure < 1008) s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreArthritis(d) {
+  // Cold, damp, low pressure all worsen joint pain
+  var s = 0;
+  if (d.temp < 5)        s += 3;
+  else if (d.temp < 10)  s += 2;
+  else if (d.temp < 15)  s += 1;
+  if (d.humidity >= 80)  s += 2;
+  else if (d.humidity >= 65) s += 1;
+  if (d.pressure < 1000) s += 3;
+  else if (d.pressure < 1010) s += 2;
+  else if (d.pressure < 1015) s += 1;
+  if (d.rainMm >= 3)     s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreSinus(d, month) {
+  // Dry air, pollen season, cold/flu season, sudden temp swings
+  var s = 0;
+  if (d.humidity < 40)   s += 3;
+  else if (d.humidity < 55) s += 2;
+  else if (d.humidity >= 80) s += 1; // very humid also irritates
+  s += Math.round(scoreGrassPollen(d, month) * 0.25);
+  s += Math.round(scoreMold(d, month) * 0.2);
+  if (d.temp < 5 || d.temp > 28) s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreMosquito(d, month) {
+  // Active Apr–Oct; peak at dusk, warm humid still evenings, standing water after rain
+  var s = 0;
+  var seasonal = (month >= 3 && month <= 9) ? 3 : 0;
+  s += seasonal;
+  if (d.temp >= 20)      s += 3;
+  else if (d.temp >= 15) s += 1;
+  if (d.humidity >= 70)  s += 2;
+  if (d.windMph <= 8)    s += 2; // still air = more activity
+  if (d.rainMm >= 5)     s += 1; // standing water = breeding
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreOutdoorPest(d, month) {
+  // Wasps, midges, flies — warm, humid summers
+  var s = 0;
+  var seasonal = (month >= 5 && month <= 8) ? 3 : (month === 4 || month === 9) ? 1 : 0;
+  s += seasonal;
+  if (d.temp >= 18)      s += 2;
+  else if (d.temp >= 12) s += 1;
+  if (d.humidity >= 65)  s += 1;
+  if (d.windMph <= 10)   s += 2; // still air = more activity
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreIndoorPest(d, month) {
+  // Mice/rats move indoors autumn/winter; cockroaches warm humid kitchens
+  var s = 0;
+  var seasonal = (month >= 9 || month <= 2) ? 3 : 0; // autumn/winter
+  s += seasonal;
+  if (d.temp < 10)       s += 2; // cold drives pests inside
+  if (d.humidity >= 70)  s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreThirst(d) {
+  // Hot, dry, windy days increase dehydration risk
+  var s = 0;
+  if (d.temp >= 32)      s += 4;
+  else if (d.temp >= 28) s += 3;
+  else if (d.temp >= 24) s += 2;
+  else if (d.temp >= 20) s += 1;
+  if (d.humidity < 40)   s += 3;
+  else if (d.humidity < 55) s += 2;
+  else if (d.humidity < 65) s += 1;
+  if (d.windMph >= 20)   s += 1;
+  return clamp(Math.round(s), 0, 10);
+}
+
+function scoreDrySkin(d, month) {
+  // Low humidity, cold, windy, winter heating
+  var s = 0;
+  if (d.humidity < 35)   s += 4;
+  else if (d.humidity < 50) s += 3;
+  else if (d.humidity < 60) s += 2;
+  else if (d.humidity < 70) s += 1;
+  if (d.temp < 5)        s += 2;
+  else if (d.temp < 12)  s += 1;
+  if (d.windMph >= 20)   s += 1;
+  var seasonal = (month <= 2 || month >= 10) ? 1 : 0;
+  s += seasonal;
+  return clamp(Math.round(s), 0, 10);
+}
+
+// ── Master scorer: returns array of all conditions for one day ────────────────
+function getAllIllnessScores(d) {
+  var m = monthOf(d.date);
+  return [
+    { id: "cold",      icon: "🤧", label: "Common Cold",     category: "illness",  score: scoreCommonCold(d, m),  tip: "Wash hands frequently. Avoid crowded indoor spaces when risk is high." },
+    { id: "flu",       icon: "🤒", label: "Flu",             category: "illness",  score: scoreFlu(d, m),         tip: "Consider annual flu vaccine. Risk peaks in winter months." },
+    { id: "grass",     icon: "🌿", label: "Grass Pollen",    category: "pollen",   score: scoreGrassPollen(d, m),  tip: "Check UK pollen count. Shower after being outdoors. Keep windows closed." },
+    { id: "tree",      icon: "🌳", label: "Tree Pollen",     category: "pollen",   score: scoreTreePollen(d, m),   tip: "Birch, oak and ash peak Feb–May. Wear sunglasses outdoors." },
+    { id: "ragweed",   icon: "🌾", label: "Ragweed / Weed",  category: "pollen",   score: scoreRagweedPollen(d, m),tip: "Peaks Aug–Oct. Rinse hair and face after outdoor time." },
+    { id: "mold",      icon: "🍄", label: "Mould Spores",    category: "pollen",   score: scoreMold(d, m),         tip: "High after rain. Use HEPA filters indoors. Avoid leaf litter." },
+    { id: "dust",      icon: "💨", label: "Dust & Dander",   category: "pollen",   score: scoreDustDander(d, m),   tip: "Damp-dust surfaces. Use allergen-proof bedding. Vacuum regularly." },
+    { id: "asthma",    icon: "🫁", label: "Asthma",          category: "respiratory", score: scoreAsthma(d, m),   tip: "Carry reliever inhaler. Avoid known triggers. Monitor peak flow." },
+    { id: "copd",      icon: "🌬", label: "COPD",            category: "respiratory", score: scoreCOPD(d, m),     tip: "Avoid cold, damp air. Wear a scarf over mouth and nose in cold weather." },
+    { id: "migraine",  icon: "🧠", label: "Migraine",        category: "pain",     score: scoreMigraine(d),        tip: "Wear sunglasses. Stay hydrated. Monitor barometric pressure changes." },
+    { id: "arthritis", icon: "🦴", label: "Arthritis Pain",  category: "pain",     score: scoreArthritis(d),       tip: "Keep warm and mobile. Cold damp days increase joint inflammation." },
+    { id: "sinus",     icon: "👃", label: "Sinus Pressure",  category: "pain",     score: scoreSinus(d, m),        tip: "Use a nasal saline rinse. Stay hydrated. Avoid sudden temperature changes." },
+    { id: "mosquito",  icon: "🦟", label: "Mosquito Activity",category: "pest",    score: scoreMosquito(d, m),     tip: "Use DEET repellent at dusk. Wear long sleeves. Drain standing water." },
+    { id: "outdoorpest",icon:"🐝", label: "Outdoor Pests",   category: "pest",     score: scoreOutdoorPest(d, m),  tip: "Check for wasp nests. Avoid eating outdoors when risk is high." },
+    { id: "indoorpest",icon: "🐭", label: "Indoor Pests",    category: "pest",     score: scoreIndoorPest(d, m),   tip: "Seal gaps in walls and floors. Store food in sealed containers." },
+    { id: "thirst",    icon: "💧", label: "Dehydration Risk",category: "wellbeing",score: scoreThirst(d),           tip: "Drink water before you feel thirsty. 2–3L per day in hot weather." },
+    { id: "dryskin",   icon: "🧴", label: "Dry Skin Risk",   category: "wellbeing",score: scoreDrySkin(d, m),      tip: "Use SPF moisturiser. Avoid very hot showers. Apply emollient daily." },
+  ];
+}
+
+// ── Category config ───────────────────────────────────────────────────────────
+var ILLNESS_CATEGORIES = [
+  { id: "all",         label: "All",           icon: "📋" },
+  { id: "illness",     label: "Illness",       icon: "🤧" },
+  { id: "pollen",      label: "Pollen & Mould",icon: "🌿" },
+  { id: "respiratory", label: "Respiratory",   icon: "🫁" },
+  { id: "pain",        label: "Pain",          icon: "🧠" },
+  { id: "pest",        label: "Pests",         icon: "🦟" },
+  { id: "wellbeing",   label: "Wellbeing",     icon: "💧" },
+];
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function IllnessScoreBar(props) {
+  var score = props.score;
+  var meta  = illnessRiskMeta(score);
+  var pct   = (score / 10) * 100;
+  return React.createElement('div', { style: { display: "flex", alignItems: "center", gap: 8, flex: 1 } },
+    React.createElement('div', { style: { flex: 1, height: 6, background: "rgba(255,255,255,0.07)", borderRadius: 3, overflow: "hidden" } },
+      React.createElement('div', { style: { width: pct + "%", height: "100%", background: meta.color, borderRadius: 3, transition: "width 0.4s ease" } })
+    ),
+    React.createElement('span', { style: { fontSize: 12, fontWeight: "bold", color: meta.color, minWidth: 14, textAlign: "right" } }, score),
+    React.createElement('span', { style: { fontSize: 10, color: meta.color, minWidth: 58 } }, meta.label)
+  );
+}
+
+function IllnessCard(props) {
+  var item = props.item;
+  var open = useState(false); var iOpen = open[0]; var setOpen = open[1];
+  var meta = illnessRiskMeta(item.score);
+  return React.createElement('div', {
+    onClick: function () { setOpen(!iOpen); },
+    style: {
+      background: iOpen ? meta.bg : "rgba(255,255,255,0.025)",
+      border: "1px solid " + (iOpen ? meta.color + "55" : "rgba(255,255,255,0.07)"),
+      borderLeft: "3px solid " + meta.color,
+      borderRadius: 10,
+      padding: "10px 12px",
+      cursor: "pointer",
+      transition: "all 0.18s"
+    }
+  },
+    React.createElement('div', { style: { display: "flex", alignItems: "center", gap: 9 } },
+      React.createElement('span', { style: { fontSize: 18, flexShrink: 0 } }, item.icon),
+      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+        React.createElement('div', { style: { fontSize: 12, color: "#e8dcc8", fontWeight: "bold", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, item.label),
+        React.createElement(IllnessScoreBar, { score: item.score })
+      ),
+      React.createElement('span', { style: { fontSize: 10, color: "#555", flexShrink: 0 } }, iOpen ? "▲" : "▼")
+    ),
+    iOpen && React.createElement('div', { style: { marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 11, color: "#9a8c7a", lineHeight: 1.65 } },
+      React.createElement('span', { style: { color: meta.color, fontWeight: "bold" } }, "💡 "),
+      item.tip
+    )
+  );
+}
+
+function IllnessDayColumn(props) {
+  var d = props.d; var sel = props.sel; var onSel = props.onSel; var i = props.i;
+  var scores = getAllIllnessScores(d);
+  var avg = Math.round(scores.reduce(function (a, s) { return a + s.score; }, 0) / scores.length);
+  var meta = illnessRiskMeta(avg);
+  var on = sel === i;
+  return React.createElement('button', {
+    onClick: function () { onSel(i); },
+    style: {
+      flex: "0 0 auto",
+      padding: "7px 8px",
+      borderRadius: 10,
+      border: "1px solid",
+      borderColor: on ? meta.color : "rgba(255,255,255,0.08)",
+      background: on ? meta.bg : "rgba(255,255,255,0.025)",
+      color: on ? meta.color : "#666",
+      fontSize: 10,
+      cursor: "pointer",
+      textAlign: "center",
+      minWidth: 50,
+      transition: "all 0.15s"
+    }
+  },
+    React.createElement('div', { style: { fontSize: 9, color: meta.color, marginBottom: 2 } }, "●"),
+    React.createElement('div', { style: { fontWeight: "bold", marginBottom: 1 } }, d.date.split(" ").slice(0, 2).join(" ")),
+    React.createElement('div', { style: { fontSize: 12, color: meta.color, fontWeight: "bold" } }, avg),
+    React.createElement('div', { style: { fontSize: 9, color: meta.color } }, meta.label)
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+
+function IllnessAllergyDashboard(props) {
+  var forecastData = props.forecastData;
+  var u            = props.u;
+  var locationName = props.locationName;
+
+  var dayIdx   = useState(0);    var iDayIdx = dayIdx[0];   var setDayIdx = dayIdx[1];
+  var catFilter= useState("all");var iCat = catFilter[0];   var setCat = catFilter[1];
+  var viewMode = useState("day");var iView = viewMode[0];   var setView = viewMode[1]; // "day" or "14day"
+  var expandAll= useState(false);var iExpand = expandAll[0];var setExpand = expandAll[1];
+
+  var days = forecastData || [];
+  if (!days.length) return null;
+
+  var day = days[Math.min(iDayIdx, days.length - 1)];
+  var allScores = getAllIllnessScores(day);
+  var filtered  = iCat === "all" ? allScores : allScores.filter(function (s) { return s.category === iCat; });
+
+  // Overall risk for today
+  var overallAvg = Math.round(allScores.reduce(function (a, s) { return a + s.score; }, 0) / allScores.length);
+  var overallMeta = illnessRiskMeta(overallAvg);
+
+  // Highest risk items for the summary banner
+  var topRisks = allScores.slice().sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
+
+  // 14-day overview: one score per condition across all days
+  var conditionTrends = getAllIllnessScores(days[0]).map(function (cond) {
+    return {
+      id: cond.id, icon: cond.icon, label: cond.label, category: cond.category,
+      scores: days.slice(0, 14).map(function (d) { return getAllIllnessScores(d).find(function (s) { return s.id === cond.id; }).score; })
+    };
+  });
+  var filteredTrends = iCat === "all" ? conditionTrends : conditionTrends.filter(function (t) { return t.category === iCat; });
+
+  var sectionSty = {
+    background: "rgba(255,255,255,0.02)",
+    border: "1px solid rgba(160,100,200,0.22)",
+    borderRadius: 16,
+    padding: "18px 16px",
+    marginBottom: 24
+  };
+
+  return React.createElement('div', { style: sectionSty },
+
+    // ── Header ──
+    React.createElement('div', { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" } },
+      React.createElement('span', { style: { fontSize: 20 } }, "🏥"),
+      React.createElement('div', { style: { flex: 1 } },
+        React.createElement('div', { style: { fontSize: 13, color: "#cc99ff", letterSpacing: 2, textTransform: "uppercase" } }, "Illness & Allergy Forecast"),
+        React.createElement('div', { style: { fontSize: 10, color: "#555", marginTop: 1 } }, locationName + " · Weather-based risk index")
+      ),
+      React.createElement('div', { style: { display: "flex", gap: 6, alignItems: "center" } },
+        React.createElement('div', {
+          style: {
+            padding: "4px 12px", borderRadius: 12,
+            background: overallMeta.color + "18",
+            border: "1px solid " + overallMeta.color + "44",
+            fontSize: 11, color: overallMeta.color, fontWeight: "bold"
+          }
+        }, "Overall: " + overallMeta.label + " (" + overallAvg + "/10)")
+      )
+    ),
+
+    // ── View toggle ──
+    React.createElement('div', { style: { display: "flex", gap: 6, marginBottom: 12 } },
+      React.createElement('button', {
+        onClick: function () { setView("day"); },
+        style: { padding: "5px 13px", borderRadius: 10, border: "1px solid", borderColor: iView === "day" ? "#cc99ff" : "rgba(255,255,255,0.1)", background: iView === "day" ? "rgba(180,100,255,0.15)" : "rgba(255,255,255,0.03)", color: iView === "day" ? "#cc99ff" : "#666", fontSize: 11, cursor: "pointer" }
+      }, "📅 Daily View"),
+      React.createElement('button', {
+        onClick: function () { setView("14day"); },
+        style: { padding: "5px 13px", borderRadius: 10, border: "1px solid", borderColor: iView === "14day" ? "#cc99ff" : "rgba(255,255,255,0.1)", background: iView === "14day" ? "rgba(180,100,255,0.15)" : "rgba(255,255,255,0.03)", color: iView === "14day" ? "#cc99ff" : "#666", fontSize: 11, cursor: "pointer" }
+      }, "📊 14-Day Overview")
+    ),
+
+    // ── Category filter ──
+    React.createElement('div', { style: { display: "flex", gap: 5, marginBottom: 14, flexWrap: "wrap" } },
+      ILLNESS_CATEGORIES.map(function (cat) {
+        var on = iCat === cat.id;
+        return React.createElement('button', {
+          key: cat.id,
+          onClick: function () { setCat(cat.id); },
+          style: { padding: "4px 10px", borderRadius: 20, border: "1px solid", borderColor: on ? "#cc99ff" : "rgba(255,255,255,0.1)", background: on ? "rgba(180,100,255,0.15)" : "rgba(255,255,255,0.03)", color: on ? "#cc99ff" : "#666", fontSize: 11, cursor: "pointer" }
+        }, cat.icon + " " + cat.label);
+      })
+    ),
+
+    // ════════════════ DAILY VIEW ════════════════
+    iView === "day" && React.createElement('div', null,
+
+      // Day selector
+      React.createElement('div', { style: { display: "flex", gap: 4, marginBottom: 14, overflowX: "auto", paddingBottom: 4 } },
+        days.slice(0, 14).map(function (d, i) {
+          return React.createElement(IllnessDayColumn, { key: i, d: d, i: i, sel: iDayIdx, onSel: setDayIdx });
+        })
+      ),
+
+      // Today's top risk banner
+      React.createElement('div', { style: { background: "rgba(180,100,255,0.07)", border: "1px solid rgba(180,100,255,0.2)", borderRadius: 12, padding: "10px 14px", marginBottom: 12 } },
+        React.createElement('div', { style: { fontSize: 10, color: "#cc99ff", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 } }, "⚠️ Highest risks — " + day.date),
+        React.createElement('div', { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+          topRisks.map(function (r) {
+            var m = illnessRiskMeta(r.score);
+            return React.createElement('div', { key: r.id, style: { display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 20, background: m.color + "18", border: "1px solid " + m.color + "44" } },
+              React.createElement('span', { style: { fontSize: 14 } }, r.icon),
+              React.createElement('span', { style: { fontSize: 11, color: m.color, fontWeight: "bold" } }, r.label + " — " + m.label)
+            );
+          })
+        )
+      ),
+
+      // Conditions grid
+      React.createElement('div', { style: { display: "flex", justifyContent: "flex-end", marginBottom: 8 } },
+        React.createElement('button', {
+          onClick: function () { setExpand(!iExpand); },
+          style: { fontSize: 11, color: "#888", background: "none", border: "none", cursor: "pointer", fontFamily: "Georgia,serif", textDecoration: "underline" }
+        }, iExpand ? "Collapse all" : "Expand all for tips")
+      ),
+      React.createElement('div', { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        (iExpand
+          ? filtered.map(function (item) {
+              return React.createElement('div', { key: item.id, style: { background: illnessRiskMeta(item.score).bg, border: "1px solid " + illnessRiskMeta(item.score).color + "44", borderLeft: "3px solid " + illnessRiskMeta(item.score).color, borderRadius: 10, padding: "10px 12px" } },
+                React.createElement('div', { style: { display: "flex", alignItems: "center", gap: 9 } },
+                  React.createElement('span', { style: { fontSize: 18, flexShrink: 0 } }, item.icon),
+                  React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                    React.createElement('div', { style: { fontSize: 12, color: "#e8dcc8", fontWeight: "bold", marginBottom: 4 } }, item.label),
+                    React.createElement(IllnessScoreBar, { score: item.score })
+                  )
+                ),
+                React.createElement('div', { style: { marginTop: 8, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 11, color: "#9a8c7a", lineHeight: 1.65 } },
+                  React.createElement('span', { style: { color: illnessRiskMeta(item.score).color, fontWeight: "bold" } }, "💡 "), item.tip
+                )
+              );
+            })
+          : filtered.map(function (item) { return React.createElement(IllnessCard, { key: item.id, item: item }); })
+        )
+      ),
+
+      // Weather context note
+      React.createElement('div', { style: { marginTop: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", fontSize: 10, color: "#555", lineHeight: 1.7 } },
+        "📊 " + day.date + " — " + day.condition + " · " + day.temp + "°C · " + day.humidity + "% humidity · " + day.windMph + "mph wind · " + day.pressure + "mb pressure"
+      )
+    ),
+
+    // ════════════════ 14-DAY OVERVIEW ════════════════
+    iView === "14day" && React.createElement('div', null,
+
+      React.createElement('div', { style: { fontSize: 11, color: "#888", marginBottom: 12 } },
+        "Tap a score to see that day's full detail. Darker = higher risk."
+      ),
+
+      React.createElement('div', { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        filteredTrends.map(function (cond) {
+          var maxScore = Math.max.apply(null, cond.scores);
+          return React.createElement('div', { key: cond.id, style: { display: "flex", alignItems: "center", gap: 8 } },
+            // Label
+            React.createElement('div', { style: { width: 130, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 } },
+              React.createElement('span', { style: { fontSize: 14 } }, cond.icon),
+              React.createElement('span', { style: { fontSize: 11, color: "#ccc", lineHeight: 1.2 } }, cond.label)
+            ),
+            // Score heat-map cells
+            React.createElement('div', { style: { display: "flex", gap: 2, flex: 1 } },
+              cond.scores.map(function (sc, di) {
+                var m = illnessRiskMeta(sc);
+                var isSel = iDayIdx === di && iView === "14day";
+                return React.createElement('div', {
+                  key: di,
+                  onClick: function () { setDayIdx(di); setView("day"); },
+                  title: (days[di] ? days[di].date : "") + ": " + m.label + " (" + sc + "/10)",
+                  style: {
+                    flex: 1, height: 24, borderRadius: 4,
+                    background: sc === 0 ? "rgba(255,255,255,0.04)" : m.color + Math.round((sc / 10) * 200 + 55).toString(16).padStart(2, "0"),
+                    cursor: "pointer",
+                    outline: isSel ? "2px solid #fff" : "none",
+                    display: "flex", alignItems: "center", justifyContent: "center"
+                  }
+                },
+                  React.createElement('span', { style: { fontSize: 9, color: sc >= 5 ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.4)", fontWeight: "bold" } }, sc)
+                );
+              })
+            )
+          );
+        })
+      ),
+
+      // Date labels row
+      React.createElement('div', { style: { display: "flex", gap: 2, marginTop: 4, paddingLeft: 138 } },
+        days.slice(0, 14).map(function (d, i) {
+          return React.createElement('div', { key: i, style: { flex: 1, textAlign: "center", fontSize: 8, color: "#444", lineHeight: 1.2 } },
+            d.date.split(" ").slice(0, 2).join(" ")
+          );
+        })
+      ),
+
+      // Legend
+      React.createElement('div', { style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" } },
+        React.createElement('span', { style: { fontSize: 10, color: "#555" } }, "Risk scale:"),
+        [
+          { label: "Very Low", score: 0 }, { label: "Low", score: 2 },
+          { label: "Moderate", score: 4 }, { label: "High", score: 6 },
+          { label: "Very High", score: 8 }, { label: "Extreme", score: 10 }
+        ].map(function (l) {
+          var m = illnessRiskMeta(l.score);
+          return React.createElement('span', { key: l.label, style: { fontSize: 10, padding: "2px 8px", borderRadius: 10, background: m.bg, color: m.color, border: "1px solid " + m.color + "44" } }, l.label);
+        })
+      )
+    ),
+
+    // ── Disclaimer ──
+    React.createElement('div', { style: { marginTop: 14, fontSize: 10, color: "#3a3a4a", lineHeight: 1.65, padding: "8px 12px", background: "rgba(255,255,255,0.015)", borderRadius: 8 } },
+      "⚠️ Risk scores are calculated from local weather data (temperature, humidity, pressure, wind, precipitation, and seasonal patterns). They are indicative only and are not a medical forecast. Always follow NHS or your healthcare provider's advice for managing allergies, respiratory conditions, or chronic illness."
+    )
+  );
+}
+
 // ── Ski & Snow Sports Dashboard ───────────────────────────────────────────────
 
 var SKI_SPORTS = [
@@ -3424,6 +4015,7 @@ React.createElement('div', {}
 , iAp==="graphs"&&React.createElement(WeatherGraphs, {forecastData:iFd,hourlyRaw:iHr,u:u})
 , iAp==="radar"&&React.createElement(MapRadar, {locationName:iLn,forecastData:iFd,lat:iLat,lon:iLon})
 , iAp==="extremes"&&React.createElement(WeatherExtremes, {forecastData:iFd,locationName:iLn,u:u})
+, iAp==="illness"&&React.createElement(IllnessAllergyDashboard, {forecastData:iFd,u:u,lat:iLat,lon:iLon,locationName:iLn})
 )
 )
 , React.createElement('div', {style:{textAlign:"center",marginTop:24,fontSize:11,color:"#4a4a5a",lineHeight:1.7}}, "The Weather Centre — powered by Open-Meteo")
