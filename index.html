@@ -2159,18 +2159,7 @@ days.slice(0,7).map(function(d,i){var dWaterT=waterTemp(d.temp,iWaterType);var d
 )
 );
 }
-// ═══════════════════════════════════════════════════════════════════════════════
-// ILLNESS & ALLERGY DASHBOARD — paste this entire block into index.html
-// Place it just BEFORE the closing </script> tag of the third <script> block
-// (the one that ends with the AnglingDashboard code, before SkiDashboard).
-//
-// Then add this line inside the App component render, after the WeatherOverview
-// section renders (search for "iAp==="overview"&&React.createElement(WeatherOverview"):
-//
-//   , iAp==="overview"&&React.createElement(IllnessAllergyDashboard, {forecastData:iFd,u:u,lat:iLat,lon:iLon,locationName:iLn})
-//
-// ═══════════════════════════════════════════════════════════════════════════════
-
+  
 // ── Scoring helpers ───────────────────────────────────────────────────────────
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
