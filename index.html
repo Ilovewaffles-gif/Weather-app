@@ -166,18 +166,49 @@ function cloudFromCond(c){
 //    blocking pattern lock in yet
 //  - Low humidity (dry heat) lets daytime temps run hotter than humid heat of the
 //    same nominal value, and dry-heat extremes are historically under-forecast
+//
+// Crucially, this is scored relative to the LOCAL SEASONAL AVERAGE for that exact
+// location and time of year (climAvg), not an absolute temperature threshold. A
+// 46°C day in Ahvaz, Iran in summer (where the seasonal average high is ~47°C) is
+// completely normal and should score near zero, while a 38°C day in London (where
+// the seasonal average is ~24°C) is a huge anomaly and should score severe. Without
+// this anchor, places that are simply hot year-round would permanently max out the
+// score, which defeats the purpose of an "underestimation" signal.
 // This does not replace the official max temp — it estimates how many extra
 // degrees of caution to apply, plus a 0-100 underestimation risk score.
-function heatwaveUnderestimate(day,dayIndex,prevDay){
-  if(!day||day.temp<24){
-    return {score:0,extraDegrees:0,trueFeelHigh:day?day.temp:0,level:"none",factors:[],summary:"No heatwave underestimation risk — temperatures are below the threshold where this applies."};
+function heatwaveUnderestimate(day,dayIndex,prevDay,climAvg){
+  if(!day){
+    return {score:0,extraDegrees:0,trueFeelHigh:0,level:"none",factors:[],summary:"No data.",anomaly:null,avgHigh:null};
   }
+  var avgHigh=climAvg&&climAvg.avgHigh!=null?climAvg.avgHigh:null;
+  var anomaly=avgHigh!=null?Math.round((day.temp-avgHigh)*10)/10:null;
+
+  // Gate: without a climatological baseline, fall back to a conservative absolute
+  // threshold (the old behaviour) so the feature still works before climAvg loads.
+  // With a baseline, gate on anomaly instead — a day has to be meaningfully hotter
+  // than what's normal for that place and time of year before we even consider it.
+  var gateOpen = avgHigh!=null ? (anomaly>=4 && day.temp>=20) : (day.temp>=24);
+  if(!gateOpen){
+    var msg = avgHigh!=null
+      ? "No heatwave underestimation risk — this is close to or below the seasonal average high of "+avgHigh+"°C for this location and time of year."
+      : "No heatwave underestimation risk — temperatures are below the threshold where this applies.";
+    return {score:0,extraDegrees:0,trueFeelHigh:day.temp,level:"none",factors:[],summary:msg,anomaly:anomaly,avgHigh:avgHigh};
+  }
+
   var cloud=cloudFromCond(day.condition);
   var factors=[];
   var score=0;
 
-  // Base heat magnitude — hotter starting points have more room to be underestimated
-  var baseScore=day.temp>=38?22:day.temp>=34?16:day.temp>=30?10:day.temp>=27?5:2;
+  // Base signal: how far above the seasonal norm is this day? This replaces the old
+  // absolute-temperature base score and is the main driver of the whole score.
+  // Falls back to absolute temperature bands only if no climatological data is available.
+  var baseScore;
+  if(avgHigh!=null){
+    baseScore = anomaly>=14?28:anomaly>=10?22:anomaly>=7?15:anomaly>=4?8:0;
+    factors.push({icon:"📈",label:"Above seasonal average",detail:"Forecast high of "+day.temp+"°C is "+anomaly.toFixed(1)+"°C above the "+avgHigh+"°C average high for this location and time of year.",pts:baseScore});
+  }else{
+    baseScore=day.temp>=38?22:day.temp>=34?16:day.temp>=30?10:day.temp>=27?5:2;
+  }
   score+=baseScore;
 
   // Cloud cover: clear skies = more underestimation risk (extra solar loading the
@@ -190,19 +221,35 @@ function heatwaveUnderestimate(day,dayIndex,prevDay){
   score+=cloudPts;
 
   // Night temperatures: warm nights mean less radiative cooling, so heat
-  // compounds day-on-day rather than resetting
+  // compounds day-on-day rather than resetting. Judged relative to the seasonal
+  // average low where available, since a "warm night" in a hot climate looks very
+  // different from a "warm night" in a temperate one.
   var nightPts=0;
-  if(day.low>=22){nightPts=16;factors.push({icon:"🌙",label:"Very warm night",detail:"Overnight low "+day.low+"°C — minimal cooling lets heat carry over and build into the next day.",pts:nightPts});}
-  else if(day.low>=18){nightPts=10;factors.push({icon:"🌙",label:"Warm night",detail:"Overnight low "+day.low+"°C — reduced overnight cooling, some heat carryover likely.",pts:nightPts});}
-  else if(day.low>=14){nightPts=4;factors.push({icon:"🌙",label:"Mild night",detail:"Overnight low "+day.low+"°C — modest cooling.",pts:nightPts});}
+  var avgLow=climAvg&&climAvg.avgLow!=null?climAvg.avgLow:null;
+  var lowAnomaly=avgLow!=null?Math.round((day.low-avgLow)*10)/10:null;
+  if(lowAnomaly!=null){
+    if(lowAnomaly>=6){nightPts=16;factors.push({icon:"🌙",label:"Night much warmer than usual",detail:"Overnight low "+day.low+"°C is "+lowAnomaly.toFixed(1)+"°C above the seasonal average ("+avgLow+"°C) — unusually little cooling lets heat carry over into the next day.",pts:nightPts});}
+    else if(lowAnomaly>=3){nightPts=10;factors.push({icon:"🌙",label:"Night warmer than usual",detail:"Overnight low "+day.low+"°C is "+lowAnomaly.toFixed(1)+"°C above the "+avgLow+"°C seasonal average — reduced cooling, some heat carryover likely.",pts:nightPts});}
+    else if(lowAnomaly>=1){nightPts=4;factors.push({icon:"🌙",label:"Night slightly warmer than usual",detail:"Overnight low "+day.low+"°C is a little above the "+avgLow+"°C seasonal average.",pts:nightPts});}
+  }else{
+    if(day.low>=22){nightPts=16;factors.push({icon:"🌙",label:"Very warm night",detail:"Overnight low "+day.low+"°C — minimal cooling lets heat carry over and build into the next day.",pts:nightPts});}
+    else if(day.low>=18){nightPts=10;factors.push({icon:"🌙",label:"Warm night",detail:"Overnight low "+day.low+"°C — reduced overnight cooling, some heat carryover likely.",pts:nightPts});}
+    else if(day.low>=14){nightPts=4;factors.push({icon:"🌙",label:"Mild night",detail:"Overnight low "+day.low+"°C — modest cooling.",pts:nightPts});}
+  }
   score+=nightPts;
 
   // Consecutive hot days compound the underestimation (ground, buildings and
-  // urban surfaces retain heat — each extra hot day adds to the bias)
+  // urban surfaces retain heat — each extra hot day adds to the bias). Judged
+  // against the same anomaly basis so this doesn't fire every single day in a
+  // climate that's simply hot all summer.
   var streakPts=0;
-  if(prevDay&&prevDay.temp>=27&&day.temp>=27){
-    streakPts=9;
-    factors.push({icon:"🔥",label:"Heat building day-on-day",detail:"Yesterday's high was "+prevDay.temp+"°C — consecutive hot days let ground and urban surfaces retain heat, often pushing the next day's true peak above forecast.",pts:streakPts});
+  if(prevDay){
+    var prevAnomaly = avgHigh!=null ? (prevDay.temp-avgHigh) : null;
+    var streakCond = avgHigh!=null ? (prevAnomaly>=4 && anomaly>=4) : (prevDay.temp>=27&&day.temp>=27);
+    if(streakCond){
+      streakPts=9;
+      factors.push({icon:"🔥",label:"Heat building day-on-day",detail:"Yesterday was also well above its seasonal average ("+prevDay.temp+"°C) — consecutive anomalously hot days let ground and urban surfaces retain heat, often pushing the next day's true peak above forecast.",pts:streakPts});
+    }
   }
   score+=streakPts;
 
@@ -240,7 +287,7 @@ function heatwaveUnderestimate(day,dayIndex,prevDay){
     low:"Minor underestimation risk — the forecast high is probably close to accurate.",
     minimal:"Low underestimation risk — conditions don't favour the forecast running cool."
   };
-  return {score:score,extraDegrees:extraDegrees,trueFeelHigh:trueFeelHigh,level:level,factors:factors.sort(function(a,b){return b.pts-a.pts;}),summary:summaryMap[level]};
+  return {score:score,extraDegrees:extraDegrees,trueFeelHigh:trueFeelHigh,level:level,factors:factors.sort(function(a,b){return b.pts-a.pts;}),summary:summaryMap[level],anomaly:anomaly,avgHigh:avgHigh};
 }
 function heatwaveLevelColor(level){return level==="severe"?"#ff1500":level==="high"?"#ff6600":level==="moderate"?"#ffaa00":level==="low"?"#ffdd66":"#4a9fd4";}
 
@@ -727,7 +774,7 @@ React.createElement('button', { key: item.id, onClick: function(){setActivePage(
 );
 }
 function DayCard(props){
-var d=props.d,i=props.i,prevDay=props.prevDay,sel=props.sel,setSel=props.setSel,u=props.u,detailView=props.detailView,setDetailView=props.setDetailView;
+var d=props.d,i=props.i,prevDay=props.prevDay,sel=props.sel,setSel=props.setSel,u=props.u,detailView=props.detailView,setDetailView=props.setDetailView,climAvg=props.climAvg;
 var color=tc(d.temp),isC=d.type==="confirmed",isN=d.type==="near",isSel=sel===i;
 var shade=shadeFeel(d.temp,d.windMph,d.humidity,d.condition);
 var sun=sunFeel(d.temp,d.windMph,d.humidity,d.condition);
@@ -735,7 +782,7 @@ var sunny=hasSun(d.condition);
 var storm=d.humidity>=50&&d.temp>=28;
 var cat=windCat(d.windMph);
 var periods=getDayPeriods(d);
-var hw=heatwaveUnderestimate(d,i,prevDay);
+var hw=heatwaveUnderestimate(d,i,prevDay,climAvg);
 var hwCol=heatwaveLevelColor(hw.level);
 return (
 React.createElement('div', { id:"daycard-"+i, onClick: function(){setSel(sel===i?null:i);}, style: {background:isSel?bgc(d.temp):"rgba(255,255,255,0.03)",border:"1px solid "+(isC?color+"66":isN?color+"44":"rgba(255,255,255,0.08)"),borderRadius:12,padding:"13px 11px 11px",cursor:"pointer",transition:"all 0.2s",transform:isSel?"scale(1.03)":"scale(1)",boxShadow:isSel?"0 6px 24px "+color+"28":"none"}}
@@ -807,6 +854,7 @@ React.createElement('div', { style: {display:"flex",flexDirection:"column",gap:8
 , React.createElement('span', { style: {fontSize:11,color:hwCol,fontWeight:"bold"}}, hw.level.charAt(0).toUpperCase()+hw.level.slice(1), " risk · score ", hw.score, "/100")
 , React.createElement('span', { style: {fontSize:12,color:hwCol,fontWeight:"bold"}}, "Plan for up to ", fmtTemp(hw.trueFeelHigh,u.temp))
 )
+, hw.avgHigh!=null&&React.createElement('div', { style: {fontSize:10,color:"#888"}}, "Seasonal average high here: ", React.createElement('b', { style: {color:"#bbb"}}, fmtTemp(hw.avgHigh,u.temp)), " · today's forecast is ", React.createElement('b', { style: {color:hwCol}}, (hw.anomaly>=0?"+":""), hw.anomaly.toFixed(1), "°", u.temp), " above normal")
 , React.createElement('div', { style: {fontSize:10,color:"#999",lineHeight:1.6}}, hw.summary)
 , hw.factors.length>0&&React.createElement('div', { style: {display:"flex",flexDirection:"column",gap:5}}, hw.factors.map(function(f,fi){return React.createElement('div', { key: fi, style: {display:"flex",gap:7,alignItems:"flex-start"}}, React.createElement('span', { style: {fontSize:13,flexShrink:0}}, f.icon), React.createElement('div', {}, React.createElement('span', { style: {fontSize:10,color:"#ccc",fontWeight:"bold"}}, f.label), React.createElement('div', { style: {fontSize:10,color:"#777",lineHeight:1.5}}, f.detail)));}))
 )
@@ -942,8 +990,8 @@ return React.createElement('div', { key: i, style: {background:"rgba(0,0,0,0.25)
 );
 }
 function HeatwaveSummaryBanner(props){
-var forecastData=props.forecastData,u=props.u,onJump=props.onJump;
-var ranked=forecastData.map(function(d,i){return {d:d,i:i,hw:heatwaveUnderestimate(d,i,i>0?forecastData[i-1]:null)};}).filter(function(r){return r.hw.level==="high"||r.hw.level==="severe";}).sort(function(a,b){return b.hw.score-a.hw.score;});
+var forecastData=props.forecastData,u=props.u,onJump=props.onJump,climAvg=props.climAvg;
+var ranked=forecastData.map(function(d,i){return {d:d,i:i,hw:heatwaveUnderestimate(d,i,i>0?forecastData[i-1]:null,climAvg)};}).filter(function(r){return r.hw.level==="high"||r.hw.level==="severe";}).sort(function(a,b){return b.hw.score-a.hw.score;});
 if(ranked.length===0)return null;
 var top=ranked[0];
 var col=heatwaveLevelColor(top.hw.level);
@@ -955,13 +1003,14 @@ React.createElement('div', { onClick: function(){onJump&&onJump(top.i);}, style:
 , React.createElement('span', { style: {fontSize:11,color:"#888",marginLeft:"auto"}}, ranked.length, " day", ranked.length>1?"s":"", " flagged")
 )
 , React.createElement('div', { style: {fontSize:13,color:"#e8dcc8",marginBottom:4}}, top.d.date, " — forecast high ", React.createElement('b', {}, fmtTemp(top.d.temp,u.temp)), " could realistically reach ", React.createElement('b', { style: {color:col}}, fmtTemp(top.hw.trueFeelHigh,u.temp)))
+, top.hw.avgHigh!=null&&React.createElement('div', { style: {fontSize:10,color:"#888",marginBottom:4}}, "Usually around ", fmtTemp(top.hw.avgHigh,u.temp), " here at this time of year — ", (top.hw.anomaly>=0?"+":""), top.hw.anomaly.toFixed(1), "° above normal")
 , React.createElement('div', { style: {fontSize:11,color:"#9a8c7a",lineHeight:1.6}}, top.hw.summary)
 , onJump&&React.createElement('div', { style: {fontSize:10,color:col,marginTop:6}}, "Tap to view full breakdown →")
 )
 );
 }
 function WeatherOverview(props){
-var forecastData=props.forecastData,locationName=props.locationName,units=props.u,hourlyRaw=props.hourlyRaw,lat=props.lat,lon=props.lon;
+var forecastData=props.forecastData,locationName=props.locationName,units=props.u,hourlyRaw=props.hourlyRaw,lat=props.lat,lon=props.lon,climAvg=props.climAvg;
 var u=units;
 var sel=useState(null);var iSel=sel[0];var setSel=sel[1];
 var graph=useState("temp");var iGraph=graph[0];var setGraph=graph[1];
@@ -972,7 +1021,7 @@ var panel={background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,25
 return (
 React.createElement('div', {}
 , React.createElement(CurrentWeather, { forecastData: forecastData, hourlyRaw: hourlyRaw, locationName: locationName, u: u, lat: lat, lon: lon})
-, React.createElement(HeatwaveSummaryBanner, { forecastData: forecastData, u: u, onJump: function(idx){setSel(idx);setDetailV("heatwave");var el=document.getElementById("daycard-"+idx);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});}})
+, React.createElement(HeatwaveSummaryBanner, { forecastData: forecastData, u: u, climAvg: climAvg, onJump: function(idx){setSel(idx);setDetailV("heatwave");var el=document.getElementById("daycard-"+idx);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});}})
 , React.createElement('div', { style: panel}
 , React.createElement('div', { style: {display:"flex",gap:5,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}
 , tabs.map(function(t){var on=iGraph===t.id;return React.createElement('button', { key: t.id, onClick: function(){setGraph(t.id);setSel(null);}, style: {padding:"5px 10px",borderRadius:20,border:"1px solid",borderColor:on?"#ff7700":"rgba(255,255,255,0.12)",background:on?"rgba(255,119,0,0.18)":"rgba(255,255,255,0.03)",color:on?"#ffaa44":"#888",fontSize:11,cursor:"pointer"}}, t.label);})
@@ -989,26 +1038,26 @@ React.createElement('div', {}
 , iGraph==="wind"&&React.createElement('div', { style: {display:"flex",gap:8,marginTop:5,fontSize:9,color:"#777",flexWrap:"wrap"}}, [["<5","V.Light"],["5-10","Light"],["10-20","Mod"],["20-30","Strong"],["30+","Gale+"]].map(function(p){return React.createElement('span', { key: p[0]}, React.createElement('span', { style: {color:"#ffcc88"}}, p[0]), " ", p[1]);}))
 )
 , React.createElement('div', { style: {display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:9}}
-, forecastData.map(function(d,i){return React.createElement(DayCard, { key: i, d: d, i: i, prevDay: i>0?forecastData[i-1]:null, sel: iSel, setSel: setSel, u: u, detailView: iDetailV, setDetailView: setDetailV});})
+, forecastData.map(function(d,i){return React.createElement(DayCard, { key: i, d: d, i: i, prevDay: i>0?forecastData[i-1]:null, sel: iSel, setSel: setSel, u: u, detailView: iDetailV, setDetailView: setDetailV, climAvg: climAvg});})
 )
 , React.createElement('div', { style: {marginTop:28,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"18px"}}
 , React.createElement('div', { style: {fontSize:11,letterSpacing:4,color:"#ff7700",textTransform:"uppercase",marginBottom:14}}, "About This Forecast")
 , React.createElement('div', { style: {display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}
-, [{icon:"📊",title:"13-Day Outlook",text:"Forecast covers 13 days. The first 3 days are high confidence. Days 4-7 are near-term estimates. Beyond day 7, treat as indicative only."},{icon:"🌡️",title:"Feel-Like Temps",text:"Feels-like temperatures account for wind chill, humidity and solar radiation. In sun vs shade can differ by 10°C or more on hot days."},{icon:"💧",title:"Rainfall Data",text:"Rain chance is the probability of any measurable rainfall. The mm figure is the expected total if rain falls. Both are shown for each day."},{icon:"💨",title:"Wind Forecasts",text:"Wind speeds are 10m surface winds. Gusts can be significantly higher. Strong Breeze (20-30 mph) can affect outdoor activities."},{icon:"🌍",title:"Data Source",text:"Forecasts are powered by Open-Meteo, a free and open weather API using ECMWF and other model data updated hourly."},{icon:"⚡",title:"Storm Risk",text:"Storm risk is flagged when temperature exceeds 28°C and humidity exceeds 50%, creating convective instability conditions."},{icon:"🔥",title:"Heatwave Underestimation",text:"Forecast highs of 24°C+ are checked against night temperatures, cloud cover, days-out lead time, pressure and humidity — factors that commonly cause forecasts to undercook real-world heat. Flagged days show how much hotter it could realistically get."}].map(function(r,i){return React.createElement('div', { key: i, style: {display:"flex",gap:12}}, React.createElement('span', { style: {fontSize:22,flexShrink:0}}, r.icon), React.createElement('div', {}, React.createElement('div', { style: {fontSize:13,color:"#e8dcc8",fontWeight:"bold",marginBottom:4}}, r.title), React.createElement('div', { style: {fontSize:12,color:"#7a6e5e",lineHeight:1.55}}, r.text)));})
+, [{icon:"📊",title:"13-Day Outlook",text:"Forecast covers 13 days. The first 3 days are high confidence. Days 4-7 are near-term estimates. Beyond day 7, treat as indicative only."},{icon:"🌡️",title:"Feel-Like Temps",text:"Feels-like temperatures account for wind chill, humidity and solar radiation. In sun vs shade can differ by 10°C or more on hot days."},{icon:"💧",title:"Rainfall Data",text:"Rain chance is the probability of any measurable rainfall. The mm figure is the expected total if rain falls. Both are shown for each day."},{icon:"💨",title:"Wind Forecasts",text:"Wind speeds are 10m surface winds. Gusts can be significantly higher. Strong Breeze (20-30 mph) can affect outdoor activities."},{icon:"🌍",title:"Data Source",text:"Forecasts are powered by Open-Meteo, a free and open weather API using ECMWF and other model data updated hourly."},{icon:"⚡",title:"Storm Risk",text:"Storm risk is flagged when temperature exceeds 28°C and humidity exceeds 50%, creating convective instability conditions."},{icon:"🔥",title:"Heatwave Underestimation",text:"Days that run meaningfully hotter than the local seasonal average are checked against night temperatures, cloud cover, days-out lead time, pressure and humidity — factors that commonly cause forecasts to undercook real-world heat. This is anchored to your location's normal climate, so a hot day somewhere that's always hot (e.g. Ahvaz in summer) won't be flagged, while the same temperature somewhere unusually warm (e.g. London) will be."}].map(function(r,i){return React.createElement('div', { key: i, style: {display:"flex",gap:12}}, React.createElement('span', { style: {fontSize:22,flexShrink:0}}, r.icon), React.createElement('div', {}, React.createElement('div', { style: {fontSize:13,color:"#e8dcc8",fontWeight:"bold",marginBottom:4}}, r.title), React.createElement('div', { style: {fontSize:12,color:"#7a6e5e",lineHeight:1.55}}, r.text)));})
 )
 )
 )
 );
 }
 function TenDayForecast(props){
-var forecastData=props.forecastData,u=props.u;
+var forecastData=props.forecastData,u=props.u,climAvg=props.climAvg;
 var sel=useState(null);var iSel=sel[0];var setSel=sel[1];
 var dv=useState("daily");var iDv=dv[0];var setDv=dv[1];
 var data=forecastData.slice(0,10);
 return (
 React.createElement('div', {}
 , React.createElement('div', { style: {fontSize:11,letterSpacing:3,color:"#ff7700",textTransform:"uppercase",marginBottom:16}}, "14-Day Forecast")
-, React.createElement(HeatwaveSummaryBanner, { forecastData: forecastData, u: u, onJump: function(idx){if(idx<10){setSel(idx);setDv("heatwave");}}})
+, React.createElement(HeatwaveSummaryBanner, { forecastData: forecastData, u: u, climAvg: climAvg, onJump: function(idx){if(idx<10){setSel(idx);setDv("heatwave");}}})
 , React.createElement('div', { style: {display:"flex",flexDirection:"column",gap:8}}
 , data.map(function(d,i){
 var color=tc(d.temp),isC=d.type==="confirmed",isN=d.type==="near",isSel=iSel===i;
@@ -1017,7 +1066,7 @@ var shade=shadeFeel(d.temp,d.windMph,d.humidity,d.condition);
 var sun=sunFeel(d.temp,d.windMph,d.humidity,d.condition);
 var sunny=hasSun(d.condition);
 var periods=getDayPeriods(d);
-var hw=heatwaveUnderestimate(d,i,i>0?forecastData[i-1]:null);
+var hw=heatwaveUnderestimate(d,i,i>0?forecastData[i-1]:null,climAvg);
 var hwCol=heatwaveLevelColor(hw.level);
 return (
 React.createElement('div', { key: i, onClick: function(){setSel(iSel===i?null:i);}, style: {background:isSel?bgc(d.temp):"rgba(255,255,255,0.03)",border:"1px solid "+(isC?color+"55":isN?color+"33":"rgba(255,255,255,0.07)"),borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"all 0.2s"}}
@@ -1060,6 +1109,7 @@ React.createElement('div', { style: {display:"flex",flexDirection:"column",gap:8
 , React.createElement('span', { style: {fontSize:11,color:hwCol,fontWeight:"bold"}}, hw.level.charAt(0).toUpperCase()+hw.level.slice(1), " risk · score ", hw.score, "/100")
 , React.createElement('span', { style: {fontSize:12,color:hwCol,fontWeight:"bold"}}, "Plan for up to ", fmtTemp(hw.trueFeelHigh,u.temp))
 )
+, hw.avgHigh!=null&&React.createElement('div', { style: {fontSize:10,color:"#888"}}, "Seasonal average high here: ", React.createElement('b', { style: {color:"#bbb"}}, fmtTemp(hw.avgHigh,u.temp)), " · today's forecast is ", React.createElement('b', { style: {color:hwCol}}, (hw.anomaly>=0?"+":""), hw.anomaly.toFixed(1), "°", u.temp), " above normal")
 , React.createElement('div', { style: {fontSize:10,color:"#999",lineHeight:1.6}}, hw.summary)
 , hw.factors.length>0&&React.createElement('div', { style: {display:"flex",flexDirection:"column",gap:5}}, hw.factors.map(function(f,fi){return React.createElement('div', { key: fi, style: {display:"flex",gap:7,alignItems:"flex-start"}}, React.createElement('span', { style: {fontSize:13,flexShrink:0}}, f.icon), React.createElement('div', {}, React.createElement('span', { style: {fontSize:10,color:"#ccc",fontWeight:"bold"}}, f.label), React.createElement('div', { style: {fontSize:10,color:"#777",lineHeight:1.5}}, f.detail)));}))
 )
@@ -4095,6 +4145,7 @@ function AviationDashboard(props) {
 
 function App(){
 var fd=useState([]);var iFd=fd[0];var setFd=fd[1];
+var climAvg=useState(null);var iClimAvg=climAvg[0];var setClimAvg=climAvg[1];
 var hr=useState(null);var iHr=hr[0];var setHr=hr[1];
 var m15=useState(null);var iM15=m15[0];var setM15=m15[1];
 var ln=useState("Loading...");var iLn=ln[0];var setLn=ln[1];
@@ -4166,10 +4217,46 @@ setSearching(true);setErr("");
 try{await fetchWeather({latitude:lat,longitude:lon,name:name,admin1:"",country_code:""});}
 catch(e){setErr("Could not load forecast.");setSearching(false);}
 }
+// Fetches a seasonal climatological baseline ("normal" daily high for this time of
+// year, at this exact location) by averaging the historical archive across the same
+// ±10 day calendar window over the last 5 complete years. This anchors the heatwave
+// underestimation system to local/seasonal context — e.g. 46°C in Ahvaz in summer is
+// close to normal, while 38°C in London is a huge anomaly, even though the raw
+// temperature numbers might suggest the opposite risk level.
+async function fetchClimateAverage(lat,lon){
+try{
+var now=new Date();
+var years=[1,2,3,4,5];
+var ranges=years.map(function(yrsAgo){
+var center=new Date(now);center.setFullYear(now.getFullYear()-yrsAgo);
+var start=new Date(center);start.setDate(start.getDate()-10);
+var end=new Date(center);end.setDate(end.getDate()+10);
+function fmt(d){return d.toISOString().split("T")[0];}
+return {start:fmt(start),end:fmt(end)};
+});
+var results=await Promise.all(ranges.map(function(r){
+return fetch("https://archive-api.open-meteo.com/v1/archive?latitude="+lat+"&longitude="+lon+"&start_date="+r.start+"&end_date="+r.end+"&daily=temperature_2m_max,temperature_2m_min&timezone=auto")
+.then(function(resp){return resp.ok?resp.json():null;})
+.catch(function(){return null;});
+}));
+var allMax=[],allMin=[];
+results.forEach(function(j){
+if(j&&j.daily&&j.daily.temperature_2m_max){
+j.daily.temperature_2m_max.forEach(function(v){if(v!=null)allMax.push(v);});
+j.daily.temperature_2m_min.forEach(function(v){if(v!=null)allMin.push(v);});
+}
+});
+if(allMax.length===0)return null;
+var avgMax=allMax.reduce(function(a,b){return a+b;},0)/allMax.length;
+var avgMin=allMin.reduce(function(a,b){return a+b;},0)/allMin.length;
+return {avgHigh:Math.round(avgMax*10)/10,avgLow:Math.round(avgMin*10)/10,sampleSize:allMax.length,yearsUsed:years.length};
+}catch(e){return null;}
+}
 async function fetchWeather(place){
-setSearching(true);setErr("");
+setSearching(true);setErr("");setClimAvg(null);
 try{
 var wR=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+place.latitude+"&longitude="+place.longitude+"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,precipitation_hours,windspeed_10m_max,windgusts_10m_max,relative_humidity_2m_mean,pressure_msl_mean,weathercode,uv_index_max&hourly=temperature_2m,weathercode,precipitation_probability,precipitation,windspeed_10m,windgusts_10m,relativehumidity_2m,pressure_msl,cloudcover,uv_index,dewpoint_2m,visibility&minutely_15=precipitation,rain,showers,weather_code&past_minutely_15=4&forecast_minutely_15=8&timezone=auto&forecast_days=13");
+fetchClimateAverage(place.latitude,place.longitude).then(function(ca){if(ca)setClimAvg(ca);});
 var wJ=await wR.json();
 var days=wJ.daily,hrs=wJ.hourly;
 var data=days.time.map(function(t,i){
@@ -4252,8 +4339,8 @@ React.createElement('div', {}
 , iRoles.includes("ski")&&React.createElement(SkiDashboard, {lat:iLat,lon:iLon,locationName:iLn,forecastData:iFd,u:u})
 , iRoles.includes("hiking")&&React.createElement(HikingDashboard, {lat:iLat,lon:iLon,locationName:iLn,forecastData:iFd,u:u})
 , iRoles.includes("aviation")&&React.createElement(AviationDashboard, {lat:iLat,lon:iLon,locationName:iLn,forecastData:iFd,hourlyRaw:iHr,u:u})
-, iAp==="overview"&&React.createElement(WeatherOverview, {forecastData:iFd,locationName:iLn,u:u,hourlyRaw:iHr,lat:iLat,lon:iLon})
-, iAp==="ten"&&React.createElement(TenDayForecast, {forecastData:iFd,u:u})
+, iAp==="overview"&&React.createElement(WeatherOverview, {forecastData:iFd,locationName:iLn,u:u,hourlyRaw:iHr,lat:iLat,lon:iLon,climAvg:iClimAvg})
+, iAp==="ten"&&React.createElement(TenDayForecast, {forecastData:iFd,u:u,climAvg:iClimAvg})
 , iAp==="hourly"&&React.createElement(HourlyForecast, {forecastData:iFd,hourlyRaw:iHr,u:u})
 , iAp==="graphs"&&React.createElement(WeatherGraphs, {forecastData:iFd,hourlyRaw:iHr,u:u})
 , iAp==="radar"&&React.createElement(MapRadar, {locationName:iLn,forecastData:iFd,lat:iLat,lon:iLon})
