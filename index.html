@@ -78,6 +78,8 @@ var NAV_ITEMS = [
   {id:"graphs",   label:"Weather Graphs",   icon:"📈"},
   {id:"radar",    label:"Map and Radar",    icon:"🗺️"},
   {id:"extremes", label:"Weather Extremes", icon:"🌡️"},
+  {id:"historical",label:"Historical Weather",icon:"📜"},
+  {id:"compare",  label:"Compare Locations",icon:"⚖️"},
   {id:"illness",  label:"Illness & Allergy",icon:"🤧"},
 ];
 
@@ -803,6 +805,7 @@ React.createElement('div', { id:"daycard-"+i, onClick: function(){setSel(sel===i
 , React.createElement('div', { style: {display:"flex",alignItems:"baseline",gap:3,marginBottom:8}}
 , React.createElement('span', { style: {fontSize:30,fontWeight:"bold",color:color,lineHeight:1}}, fmtTemp(d.temp,u.temp))
 , React.createElement('span', { style: {fontSize:11,color:"#5a7a5a",marginLeft:5}}, "/ "+fmtTemp(d.low,u.temp))
+, (function(){var nightFeel=shadeFeel(d.low,d.windMph*0.4,d.humidity,d.condition);var diff=nightFeel-d.low;if(Math.abs(diff)<=1)return null;return React.createElement('span', {style:{fontSize:10,color:"#4a7a9a",marginLeft:3}}, "(feels "+fmtTemp(nightFeel,u.temp)+" night)");})()
 )
 , hw.level!=="none"&&hw.level!=="minimal"&&React.createElement('div', { style: {display:"flex",justifyContent:"space-between",alignItems:"center",background:hwCol+"18",border:"1px solid "+hwCol+"44",borderRadius:8,padding:"5px 8px",marginBottom:8}}
 , React.createElement('span', { style: {fontSize:10,color:hwCol,fontWeight:"bold"}}, "🔥 ", hw.level==="severe"?"Severe":hw.level==="high"?"High":"Moderate", " underestimate risk")
@@ -816,6 +819,8 @@ React.createElement('div', { id:"daycard-"+i, onClick: function(){setSel(sel===i
 , React.createElement('span', { style: {color:rc(d.rain)}}, d.rain, "%")
 , React.createElement('span', { style: {color:rc(d.rain)}}, fmtRain(d.rainMm,u.rain))
 , d.rainHours>0&&React.createElement('span', { style: {color:"#5577aa"}}, d.rainHours, "h")
+, d.snowMm>0&&React.createElement('span', { style: {color:"#aaddff",fontWeight:"bold"}}, "❄️ ",(d.snowMm).toFixed(1),"mm snow")
+, (function(){var pt=d.snowMm>0?precipType(d.temp,d.low,d.snowMm,d.rainMm):null;return pt&&React.createElement('span', {style:{color:pt.col,fontSize:9}}, pt.icon+" "+pt.label);})()
 )
 , React.createElement('div', { style: {display:"flex",gap:4,fontSize:10,flexWrap:"wrap",marginBottom:isSel?6:0}}
 , React.createElement('span', { style: {color:hc(d.humidity)}}, d.humidity, "%hum")
@@ -1021,6 +1026,17 @@ React.createElement('div', { onClick: function(){onJump&&onJump(top.i);}, style:
 )
 );
 }
+function precipType(temp,low,snowMm,rainMm){
+  // Returns the most likely precipitation type label + icon given temperature context
+  if(snowMm>0&&temp<=0)return{label:"Snow",icon:"❄️",col:"#aaddff"};
+  if(snowMm>0&&temp<=2)return{label:"Sleet/Snow",icon:"🌨️",col:"#88ccff"};
+  if(snowMm>0&&temp<=4)return{label:"Wet Snow",icon:"🌨️",col:"#aaddff"};
+  if(rainMm>0&&low<=0&&temp<=3)return{label:"Freezing Rain",icon:"🧊",col:"#88eeff"};
+  if(rainMm>0&&temp<=4&&low<2)return{label:"Sleet Risk",icon:"🌧️❄️",col:"#aaccff"};
+  if(rainMm>0)return{label:"Rain",icon:"🌧️",col:"#88aaff"};
+  return null;
+}
+
 function buildWeatherWarnings(forecastData, climAvg){
   // Derive official-style meteorological warnings from forecast data.
   // Uses red/amber/yellow tiers consistent with Met Office / WMO conventions:
@@ -1071,6 +1087,30 @@ function buildWeatherWarnings(forecastData, climAvg){
       } else if(d.uvMax>=8){
         warnings.push({level:"yellow",icon:"🕶️",type:"High UV Advisory",body:"UV index "+d.uvMax+" — high sun exposure risk. SPF30+ sunscreen, hat and sunglasses required.",expires:d.date,source:"CAMS/Forecast data"});
       }
+    }
+    // Frost and ice warnings
+    if(d.low<=-5){
+      warnings.push({level:"amber",icon:"🧊",type:"Hard Freeze Warning",body:"Overnight low of "+d.low+"°C expected — severe frost. Risk of burst pipes, ice on roads and paths. Protect vulnerable plants and outdoor plumbing.",expires:d.date,source:"Forecast data"});
+    } else if(d.low<=0){
+      warnings.push({level:"yellow",icon:"❄️",type:"Frost Advisory",body:"Overnight low of "+d.low+"°C — ground and air frost possible. Ice likely on untreated surfaces, roads and pavements.",expires:d.date,source:"Forecast data"});
+    } else if(d.low<=2){
+      warnings.push({level:"yellow",icon:"❄️",type:"Frost Risk",body:"Overnight low of "+d.low+"°C — ground frost possible in sheltered areas. Check for ice on vehicles and paths.",expires:d.date,source:"Forecast data"});
+    }
+    // Ice / freezing rain
+    if(d.low<=0&&d.rain>=40&&d.temp>=1&&d.temp<=4){
+      warnings.push({level:"amber",icon:"🧊",type:"Freezing Rain / Ice Warning",body:"Rain falling on frozen or near-frozen surfaces on "+d.date+" — dangerous black ice likely on all surfaces. Travel strongly discouraged.",expires:d.date,source:"Forecast data"});
+    }
+    // Snow warnings
+    if(d.snowMm>=10){
+      warnings.push({level:"amber",icon:"❄️",type:"Heavy Snow Warning",body:d.snowMm+"mm snow water equivalent expected — significant accumulation likely. Travel disruption, possible road closures.",expires:d.date,source:"Forecast data"});
+    } else if(d.snowMm>=3){
+      warnings.push({level:"yellow",icon:"🌨️",type:"Snow Advisory",body:d.snowMm+"mm snow expected on "+d.date+". Possible disruption to travel.",expires:d.date,source:"Forecast data"});
+    }
+    // Lightning warnings (standalone, not just in thunderstorm context)
+    if(d.condition.includes("⛈")&&(d.rain>=70||d.humidity>=70)){
+      warnings.push({level:"amber",icon:"⚡",type:"Lightning Warning",body:"Thunderstorms with significant lightning risk expected "+d.date+". Avoid open ground, tall trees and water. Seek shelter indoors or in a hard-topped vehicle.",expires:d.date,source:"Forecast data"});
+    } else if(d.condition.includes("⛈")){
+      warnings.push({level:"yellow",icon:"⚡",type:"Lightning Advisory",body:"Thunderstorms possible "+d.date+" — be prepared to seek shelter quickly.",expires:d.date,source:"Forecast data"});
     }
   });
   // Deduplicate: keep only the highest-level warning per type (e.g. don't show 7 days of heat warnings)
@@ -1147,6 +1187,31 @@ var panel={background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,25
 return (
 React.createElement('div', {}
 , React.createElement(CurrentWeather, { forecastData: forecastData, hourlyRaw: hourlyRaw, locationName: locationName, u: u, lat: lat, lon: lon})
+, (function(){
+  // Sunrise/sunset and today's precipitation type — surfaced prominently on Overview
+  var today=forecastData&&forecastData[0];
+  if(!today||!lat)return null;
+  var now=new Date();
+  var doy=Math.floor((now-(new Date(now.getFullYear(),0,0)))/86400000);
+  var sun=sunTimes(lat,doy);
+  var pt=today.snowMm>0?precipType(today.temp,today.low,today.snowMm,today.rainMm):null;
+  var chips=[
+    {icon:"🌅",label:"Sunrise",val:sun.rise},
+    {icon:"🌇",label:"Sunset",val:sun.set},
+    {icon:"🕐",label:"Daylight",val:sun.daylight+"h"},
+    today.low<=2&&{icon:"❄️",label:"Frost Risk",val:today.low<=0?"Air Frost":"Ground Frost",col:"#88ccff"},
+    pt&&{icon:pt.icon,label:"Precip Type",val:pt.label,col:pt.col},
+  ].filter(Boolean);
+  return React.createElement('div', {style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},
+    chips.map(function(c,i){return React.createElement('div', {key:i,style:{display:"flex",alignItems:"center",gap:5,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:10,padding:"6px 11px"}},
+      React.createElement('span', {style:{fontSize:14}}, c.icon),
+      React.createElement('div', {},
+        React.createElement('div', {style:{fontSize:9,color:"#555",textTransform:"uppercase",letterSpacing:1}}, c.label),
+        React.createElement('div', {style:{fontSize:12,fontWeight:"bold",color:c.col||"#c8b89a"}}, c.val)
+      )
+    );})
+  );
+})()
 , React.createElement(WeatherWarningsPanel, { locationName: locationName, forecastData: forecastData, climAvg: climAvg})
 , React.createElement(HeatwaveSummaryBanner, { forecastData: forecastData, u: u, climAvg: climAvg, onJump: function(idx){setSel(idx);setDetailV("heatwave");var el=document.getElementById("daycard-"+idx);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});}}), React.createElement('div', { style: panel}
 , React.createElement('div', { style: {display:"flex",gap:5,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}
@@ -1457,6 +1522,289 @@ React.createElement('div', {}
 )
 )
 )
+)
+);
+}
+function HistoricalWeather(props){
+var lat=props.lat,lon=props.lon,locationName=props.locationName,u=props.u,forecastData=props.forecastData;
+var status=useState("idle");var iStatus=status[0];var setStatus=status[1];
+var data=useState(null);var iData=data[0];var setData=data[1];
+var err=useState("");var iErr=err[0];var setErr=err[1];
+var selYear=useState(new Date().getFullYear()-1);var iYear=selYear[0];var setYear=selYear[1];
+var selMonth=useState(new Date().getMonth());var iMonth=selMonth[0];var setMonth=selMonth[1];
+var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var MFULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
+async function fetchHistory(){
+  if(!lat||!lon){setErr("Load a location first.");return;}
+  setStatus("loading");setErr("");setData(null);
+  try{
+    // Fetch the selected month's full daily data from the archive API
+    var y=iYear,m=iMonth;
+    var startD=y+"-"+(String(m+1).padStart(2,"0"))+"-01";
+    var lastDay=new Date(y,m+1,0).getDate();
+    var endD=y+"-"+(String(m+1).padStart(2,"0"))+"-"+lastDay;
+    // Also fetch same month for past 5 years for climatology
+    var years=[1,2,3,4,5].map(function(i){return y-i;});
+    var archiveUrl=function(sy,ey){return "https://archive-api.open-meteo.com/v1/archive?latitude="+lat+"&longitude="+lon+"&start_date="+sy+"&end_date="+ey+"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,weathercode,sunshine_duration&timezone=auto";};
+    var mainRes=await fetch(archiveUrl(startD,endD));
+    if(!mainRes.ok)throw new Error("Archive API error");
+    var mainJ=await mainRes.json();
+    // Fetch last year same date for comparison
+    var lyStart=(y-1)+"-"+(String(m+1).padStart(2,"0"))+"-01";
+    var lyEnd=(y-1)+"-"+(String(m+1).padStart(2,"0"))+"-"+lastDay;
+    var lyRes=await fetch(archiveUrl(lyStart,lyEnd));
+    var lyJ=lyRes.ok?await lyRes.json():null;
+    // Compute stats for the selected month
+    var temps=mainJ.daily.temperature_2m_max.filter(function(v){return v!=null;});
+    var lows=mainJ.daily.temperature_2m_min.filter(function(v){return v!=null;});
+    var precip=mainJ.daily.precipitation_sum.filter(function(v){return v!=null;});
+    var winds=mainJ.daily.windspeed_10m_max.filter(function(v){return v!=null;});
+    var sunshine=mainJ.daily.sunshine_duration;
+    var avg=function(a){return a.length?Math.round(a.reduce(function(s,v){return s+v;},0)/a.length*10)/10:null;};
+    var sum=function(a){return Math.round(a.reduce(function(s,v){return s+v;},0)*10)/10;};
+    // Day by day data for chart
+    var days=mainJ.daily.time.map(function(t,i){return{
+      date:new Date(t+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"}),
+      temp:mainJ.daily.temperature_2m_max[i],
+      low:mainJ.daily.temperature_2m_min[i],
+      rain:mainJ.daily.precipitation_sum[i]||0,
+      wind:mainJ.daily.windspeed_10m_max[i]||0,
+      code:mainJ.daily.weathercode[i]||0,
+      sun:sunshine&&sunshine[i]!=null?Math.round(sunshine[i]/3600):null
+    };});
+    // Last year comparison
+    var lyTemps=lyJ?lyJ.daily.temperature_2m_max.filter(function(v){return v!=null;}):[];
+    var lyPrecip=lyJ?lyJ.daily.precipitation_sum.filter(function(v){return v!=null;}):[];
+    setData({
+      days:days,
+      avgHigh:avg(temps),avgLow:avg(lows),
+      maxTemp:temps.length?Math.max.apply(null,temps):null,
+      minTemp:lows.length?Math.min.apply(null,lows):null,
+      totalRain:sum(precip),avgWind:avg(winds.map(function(v){return Math.round(v*0.621371);})),
+      rainDays:precip.filter(function(v){return v>=1;}).length,
+      avgSunHrs:sunshine?avg(sunshine.map(function(v){return v!=null?Math.round(v/3600):null;}).filter(function(v){return v!=null;})):null,
+      lyAvgHigh:avg(lyTemps),lyTotalRain:sum(lyPrecip),
+      location:locationName,month:MFULL[m],year:y
+    });
+    setStatus("done");
+  }catch(e){setErr("Could not fetch historical data: "+e.message);setStatus("error");}
+}
+if(!lat||!lon)return React.createElement('div', {style:{padding:"40px 20px",textAlign:"center",color:"#555"}}, "Search for a location to view its historical weather.");
+// Pre-compute climatology card to avoid IIFE inside JSX-less createElement tree
+var climoCard=null;
+if(iData&&forecastData&&forecastData.length>0){
+  var todayF=forecastData[0];
+  var hotDays=iData.days.filter(function(d){return d.temp!=null&&d.temp>=todayF.temp-2;}).length;
+  var coldNights=iData.days.filter(function(d){return d.low!=null&&d.low<0;}).length;
+  var heavyRainDays=iData.days.filter(function(d){return d.rain>=20;}).length;
+  var climoFacts=[];
+  if(hotDays>0)climoFacts.push({icon:"🌡️",text:"Days as hot as today's forecast ("+fmtTemp(todayF.temp,u.temp)+"): "+hotDays+" in "+MFULL[iMonth]+" "+iYear});
+  if(coldNights>0)climoFacts.push({icon:"❄️",text:"Nights with sub-zero lows: "+coldNights+" in "+MFULL[iMonth]+" "+iYear});
+  if(heavyRainDays>0)climoFacts.push({icon:"🌧️",text:"Days with ≥20mm rain: "+heavyRainDays+" in "+MFULL[iMonth]+" "+iYear});
+  if(climoFacts.length>0){
+    climoCard=React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px"}}
+      , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "HOW DOES THIS COMPARE?")
+      , climoFacts.map(function(f,i){return React.createElement('div', {key:i,style:{display:"flex",gap:8,marginBottom:6,fontSize:12,color:"#bbb"}}, React.createElement('span', {style:{fontSize:14}}, f.icon), f.text);})
+    );
+  }
+}
+return(
+React.createElement('div', {style:{paddingBottom:40}}
+, React.createElement('div', {style:{fontSize:11,letterSpacing:3,color:"#ff7700",textTransform:"uppercase",marginBottom:16}}, "Historical Weather")
+, React.createElement('div', {style:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"16px",marginBottom:20}}
+  , React.createElement('div', {style:{fontSize:12,color:"#bbb",marginBottom:12}}, "Explore archived daily weather for any past month at ", React.createElement('b', {style:{color:"#e8dcc8"}}, locationName.split(",").slice(0,2).join(",")))
+  , React.createElement('div', {style:{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}
+    , React.createElement('div', {}
+      , React.createElement('div', {style:{fontSize:10,color:"#666",marginBottom:4}}, "MONTH")
+      , React.createElement('div', {style:{display:"flex",gap:4,flexWrap:"wrap"}},
+        MONTHS.map(function(m,i){return React.createElement('button', {key:i,onClick:function(){setMonth(i);},style:{padding:"4px 8px",borderRadius:7,border:"1px solid "+(iMonth===i?"#ff7700":"rgba(255,255,255,0.1)"),background:iMonth===i?"rgba(255,119,0,0.2)":"transparent",color:iMonth===i?"#ffaa44":"#777",fontSize:11,cursor:"pointer"}},m);})
+      )
+    )
+    , React.createElement('div', {}
+      , React.createElement('div', {style:{fontSize:10,color:"#666",marginBottom:4}}, "YEAR")
+      , React.createElement('div', {style:{display:"flex",gap:4,flexWrap:"wrap"}},
+        [2020,2021,2022,2023,2024,2025].map(function(y){return React.createElement('button', {key:y,onClick:function(){setYear(y);},style:{padding:"4px 10px",borderRadius:7,border:"1px solid "+(iYear===y?"#ff7700":"rgba(255,255,255,0.1)"),background:iYear===y?"rgba(255,119,0,0.2)":"transparent",color:iYear===y?"#ffaa44":"#777",fontSize:11,cursor:"pointer"}},y);})
+      )
+    )
+    , React.createElement('button', {onClick:fetchHistory,disabled:iStatus==="loading",style:{padding:"8px 18px",borderRadius:10,border:"1px solid rgba(255,119,0,0.5)",background:"rgba(255,119,0,0.15)",color:"#ff9944",fontSize:12,cursor:iStatus==="loading"?"wait":"pointer",fontWeight:"bold"}}, iStatus==="loading"?"Loading...":"View "+MONTHS[iMonth]+" "+iYear)
+  )
+)
+, iErr&&React.createElement('div', {style:{padding:"12px",color:"#ff7744",fontSize:12,background:"rgba(255,80,0,0.08)",borderRadius:10,marginBottom:16}}, iErr)
+, iStatus==="loading"&&React.createElement('div', {style:{textAlign:"center",padding:"40px",color:"#555",fontSize:13}}, "Fetching archive data from Open-Meteo...")
+, iData&&iStatus==="done"&&(
+  React.createElement('div', {}
+  // Summary stats row
+  , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10}}, iData.month+" "+iData.year+" — "+iData.location)
+  , React.createElement('div', {style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:8,marginBottom:20}},
+    [
+      {icon:"🌡️",label:"Avg High",val:iData.avgHigh!=null?fmtTemp(iData.avgHigh,u.temp):"—",sub:iData.lyAvgHigh!=null?"Last yr: "+fmtTemp(iData.lyAvgHigh,u.temp):"",col:tc(iData.avgHigh||0)},
+      {icon:"🌙",label:"Avg Low",val:iData.avgLow!=null?fmtTemp(iData.avgLow,u.temp):"—",sub:"",col:"#4a9fd4"},
+      {icon:"🔥",label:"Hottest Day",val:iData.maxTemp!=null?fmtTemp(iData.maxTemp,u.temp):"—",sub:"",col:tc(iData.maxTemp||0)},
+      {icon:"🧊",label:"Coldest Night",val:iData.minTemp!=null?fmtTemp(iData.minTemp,u.temp):"—",sub:"",col:"#88ccff"},
+      {icon:"🌧️",label:"Total Rain",val:iData.totalRain!=null?fmtRain(iData.totalRain,u.rain):"—",sub:iData.lyTotalRain!=null?"Last yr: "+fmtRain(iData.lyTotalRain,u.rain):"",col:"#88aaff"},
+      {icon:"☔",label:"Rainy Days",val:iData.rainDays!=null?iData.rainDays+"d":"—",sub:"≥1mm",col:"#6699cc"},
+      {icon:"💨",label:"Avg Wind",val:iData.avgWind!=null?fmtSpd(iData.avgWind,u.speed):"—",sub:"",col:wc(iData.avgWind||0)},
+      iData.avgSunHrs!=null&&{icon:"☀️",label:"Avg Sunshine",val:iData.avgSunHrs+"h/day",sub:"",col:"#ffcc44"},
+    ].filter(Boolean).map(function(s,i){return React.createElement('div', {key:i,style:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:12,padding:"11px 13px"}},
+      React.createElement('div', {style:{fontSize:10,color:"#555",marginBottom:3}}, s.icon+" "+s.label),
+      React.createElement('div', {style:{fontSize:16,fontWeight:"bold",color:s.col}}, s.val),
+      s.sub&&React.createElement('div', {style:{fontSize:10,color:"#555",marginTop:2}}, s.sub)
+    );})
+  )
+  // Daily bar chart — temperature range
+  , React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginBottom:16}}
+    , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "DAILY TEMPERATURE RANGE")
+    , React.createElement('div', {style:{display:"flex",gap:2,alignItems:"flex-end",height:90,overflowX:"auto"}}
+      , iData.days.map(function(d,i){
+        var allTemps=iData.days.map(function(x){return x.temp;}).filter(function(v){return v!=null;});
+        var minV=Math.min.apply(null,allTemps)-2,maxV=Math.max.apply(null,allTemps)+2,range=maxV-minV;
+        var hHigh=range>0?Math.round(((d.temp-minV)/range)*80):40;
+        var hLow=range>0?Math.round(((d.low-minV)/range)*80):10;
+        return React.createElement('div', {key:i,style:{display:"flex",flexDirection:"column",alignItems:"center",gap:1,flexShrink:0,width:18}}
+          , React.createElement('div', {style:{width:8,height:Math.max(2,hHigh-hLow),background:tc(d.temp),borderRadius:"3px 3px 0 0",marginTop:"auto"}})
+          , React.createElement('div', {style:{width:8,height:Math.max(2,hLow),background:"#4a9fd4",borderRadius:"0 0 3px 3px"}})
+          , i%5===0&&React.createElement('div', {style:{fontSize:8,color:"#444",marginTop:2,transform:"rotate(-45deg)",transformOrigin:"center"}}, d.date.split(" ")[0])
+        );
+      })
+    )
+    , React.createElement('div', {style:{display:"flex",gap:12,marginTop:8,fontSize:10,color:"#555"}}
+      , React.createElement('span', {}, React.createElement('span', {style:{color:tc(iData.avgHigh||20)}}, "■"), " Daily High")
+      , React.createElement('span', {}, React.createElement('span', {style:{color:"#4a9fd4"}}, "■"), " Daily Low")
+    )
+  )
+  // Daily rainfall bars
+  , React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginBottom:16}}
+    , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "DAILY RAINFALL")
+    , React.createElement('div', {style:{display:"flex",gap:2,alignItems:"flex-end",height:60,overflowX:"auto"}}
+      , iData.days.map(function(d,i){
+        var maxR=Math.max.apply(null,iData.days.map(function(x){return x.rain;}));
+        var h=maxR>0?Math.max(2,Math.round((d.rain/maxR)*55)):2;
+        return React.createElement('div', {key:i,style:{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0,width:18}}
+          , React.createElement('div', {style:{width:8,height:h,background:d.rain>=10?"#4488ff":"#88aacc",borderRadius:"3px 3px 0 0",marginTop:"auto"}})
+          , i%5===0&&React.createElement('div', {style:{fontSize:8,color:"#444",marginTop:2,transform:"rotate(-45deg)",transformOrigin:"center"}}, d.date.split(" ")[0])
+        );
+      })
+    )
+  )
+  , climoCard
+  )
+)
+)
+);
+}
+
+function CompareLocations(props){
+var u=props.u;
+var locs=useState([{name:"",lat:null,lon:null,data:null,loading:false,err:""}]);
+var iLocs=locs[0];var setLocs=locs[1];
+var searchQ=useState(["",""]);var iQ=searchQ[0];var setQ=searchQ[1];
+var searchRes=useState([null,null]);var iRes=searchRes[0];var setRes=searchRes[1];
+function updateLoc(i,patch){setLocs(function(prev){var n=prev.map(function(l,j){return j===i?Object.assign({},l,patch):l;});return n;});}
+async function doSearch(i){
+  var q=iQ[i];if(!q)return;
+  var r=await fetch("https://geocoding-api.open-meteo.com/v1/search?name="+encodeURIComponent(q)+"&count=5&language=en&format=json").then(function(r){return r.json();}).catch(function(){return null;});
+  setRes(function(prev){var n=[...prev];n[i]=r&&r.results?r.results:[];return n;});
+}
+async function selectLoc(idx,result){
+  setRes(function(prev){var n=[...prev];n[idx]=null;return n;});
+  setQ(function(prev){var n=[...prev];n[idx]=result.name+", "+(result.country||"");return n;});
+  updateLoc(idx,{name:result.name+", "+(result.country||""),lat:result.latitude,lon:result.longitude,data:null,loading:true,err:""});
+  try{
+    var wR=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+result.latitude+"&longitude="+result.longitude+"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max,weathercode,uv_index_max&timezone=auto&forecast_days=7");
+    var wJ=await wR.json();
+    var days=wJ.daily.time.map(function(t,i){return{
+      date:new Date(t+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}),
+      temp:Math.round(wJ.daily.temperature_2m_max[i]),
+      low:Math.round(wJ.daily.temperature_2m_min[i]),
+      rain:wJ.daily.precipitation_probability_max[i]||0,
+      rainMm:parseFloat((wJ.daily.precipitation_sum[i]||0).toFixed(1)),
+      wind:Math.round((wJ.daily.windspeed_10m_max[i]||0)*0.621371),
+      code:wJ.daily.weathercode[i]||0,
+      uv:wJ.daily.uv_index_max&&wJ.daily.uv_index_max[i]!=null?Math.round(wJ.daily.uv_index_max[i]):null
+    };});
+    updateLoc(idx,{data:days,loading:false});
+  }catch(e){updateLoc(idx,{loading:false,err:"Failed to load"});}
+}
+var colors=["#ff7700","#4a9fd4","#44cc66"];
+var DAYS=7;
+return(
+React.createElement('div', {style:{paddingBottom:40}}
+, React.createElement('div', {style:{fontSize:11,letterSpacing:3,color:"#ff7700",textTransform:"uppercase",marginBottom:16}}, "Compare Locations")
+, React.createElement('div', {style:{fontSize:12,color:"#666",marginBottom:16}}, "Compare the 7-day forecast side-by-side for up to 3 locations.")
+, React.createElement('div', {style:{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}},
+  [0,1,2].map(function(idx){
+    var loc=iLocs[idx]||{name:"",data:null,loading:false,err:""};
+    var res=iRes[idx];
+    return React.createElement('div', {key:idx,style:{flex:"1 1 180px",minWidth:160,position:"relative"}}
+      , React.createElement('div', {style:{fontSize:10,color:colors[idx],marginBottom:4,fontWeight:"bold"}}, "Location "+(idx+1))
+      , React.createElement('div', {style:{display:"flex",gap:4}}
+        , React.createElement('input', {value:iQ[idx]||"",onChange:function(e){setQ(function(prev){var n=[...prev];n[idx]=e.target.value;return n;});},onKeyDown:function(e){if(e.key==="Enter")doSearch(idx);},placeholder:"Search city...",style:{flex:1,padding:"7px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#e8dcc8",fontSize:12}})
+        , React.createElement('button', {onClick:function(){doSearch(idx);},style:{padding:"7px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#aaa",fontSize:12,cursor:"pointer"}}, "Go")
+      )
+      , res&&res.length>0&&React.createElement('div', {style:{position:"absolute",top:"100%",left:0,right:0,zIndex:50,background:"#131820",border:"1px solid rgba(255,255,255,0.15)",borderRadius:10,overflow:"hidden",marginTop:2}},
+        res.slice(0,5).map(function(r,ri){return React.createElement('div', {key:ri,onClick:function(){selectLoc(idx,r);},style:{padding:"8px 12px",fontSize:12,color:"#e8dcc8",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.06)"}}, r.name+", "+(r.admin1?r.admin1+", ":"")+r.country);})
+      )
+      , loc.loading&&React.createElement('div', {style:{fontSize:11,color:"#666",marginTop:4}}, "Loading...")
+      , loc.err&&React.createElement('div', {style:{fontSize:11,color:"#ff7744",marginTop:4}}, loc.err)
+    );
+  })
+)
+, iLocs.some(function(l){return l.data;})&&(
+  React.createElement('div', {}
+  // Day-by-day comparison table
+  , React.createElement('div', {style:{overflowX:"auto"}}
+    , React.createElement('table', {style:{width:"100%",borderCollapse:"collapse",fontSize:12}}
+      , React.createElement('thead', {}
+        , React.createElement('tr', {}
+          , React.createElement('th', {style:{textAlign:"left",padding:"6px 8px",color:"#555",fontSize:10,fontWeight:"normal",borderBottom:"1px solid rgba(255,255,255,0.08)"}}, "Day")
+          , iLocs.map(function(loc,i){return loc.data&&React.createElement('th', {key:i,style:{textAlign:"center",padding:"6px 8px",color:colors[i],fontSize:10,borderBottom:"1px solid rgba(255,255,255,0.08)"},colSpan:2}, loc.name.split(",")[0]);})
+        )
+        , React.createElement('tr', {}
+          , React.createElement('th', {style:{borderBottom:"1px solid rgba(255,255,255,0.06)"}})
+          , iLocs.map(function(loc,i){return loc.data&&React.createElement(React.Fragment, {key:i}, React.createElement('th', {style:{textAlign:"center",padding:"2px 8px 6px",color:"#555",fontSize:9,fontWeight:"normal",borderBottom:"1px solid rgba(255,255,255,0.06)"}}, "High"), React.createElement('th', {style:{textAlign:"center",padding:"2px 8px 6px",color:"#555",fontSize:9,fontWeight:"normal",borderBottom:"1px solid rgba(255,255,255,0.06)"}}, "Rain%"));})
+        )
+      )
+      , React.createElement('tbody', {}
+        , Array.from({length:DAYS}).map(function(_,di){
+          return React.createElement('tr', {key:di,style:{borderBottom:"1px solid rgba(255,255,255,0.04)"}}
+            , React.createElement('td', {style:{padding:"7px 8px",color:"#888",fontSize:11}}, iLocs.find(function(l){return l.data;})&&iLocs.find(function(l){return l.data;}).data[di]&&iLocs.find(function(l){return l.data;}).data[di].date.split(" ").slice(0,2).join(" "))
+            , iLocs.map(function(loc,li){
+              if(!loc.data)return null;
+              var d=loc.data[di];
+              if(!d)return React.createElement(React.Fragment, {key:li}, React.createElement('td', {},"—"),React.createElement('td', {},"—"));
+              return React.createElement(React.Fragment, {key:li}
+                , React.createElement('td', {style:{textAlign:"center",padding:"7px 8px",fontWeight:"bold",color:tc(d.temp)}}, fmtTemp(d.temp,u.temp))
+                , React.createElement('td', {style:{textAlign:"center",padding:"7px 8px",color:rc(d.rain)}}, d.rain+"%")
+              );
+            })
+          );
+        })
+      )
+    )
+  )
+  // Temperature comparison chart
+  , React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginTop:16}}
+    , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "7-DAY TEMPERATURE COMPARISON")
+    , React.createElement('div', {style:{display:"flex",gap:10,marginBottom:8}},
+      iLocs.map(function(loc,i){return loc.data&&React.createElement('div', {key:i,style:{display:"flex",alignItems:"center",gap:4,fontSize:10,color:colors[i]}}, React.createElement('span', {style:{width:12,height:3,background:colors[i],display:"inline-block",borderRadius:2}}), loc.name.split(",")[0]);})
+    )
+    , React.createElement('div', {style:{display:"flex",gap:3,alignItems:"flex-end",height:80}}
+      , Array.from({length:DAYS}).map(function(_,di){
+        var allVals=iLocs.filter(function(l){return l.data;}).map(function(l){return l.data[di]?l.data[di].temp:null;}).filter(function(v){return v!=null;});
+        var gMin=allVals.length?Math.min.apply(null,allVals):0,gMax=allVals.length?Math.max.apply(null,allVals):30,range=Math.max(gMax-gMin,1);
+        return React.createElement('div', {key:di,style:{flex:1,display:"flex",gap:2,alignItems:"flex-end",height:"100%"}}
+          , iLocs.map(function(loc,li){
+            if(!loc.data)return null;
+            var d=loc.data[di];
+            var h=d?Math.max(4,Math.round(((d.temp-gMin)/range)*72)+4):4;
+            return React.createElement('div', {key:li,style:{flex:1,height:h,background:colors[li],borderRadius:"3px 3px 0 0",opacity:0.8,title:d?fmtTemp(d.temp,u.temp):""}});
+          })
+        );
+      })
+    )
+  )
+  )
+  )
 )
 );
 }
@@ -4387,7 +4735,7 @@ return {avgHigh:Math.round(avgMax*10)/10,avgLow:Math.round(avgMin*10)/10,sampleS
 async function fetchWeather(place){
 setSearching(true);setErr("");setClimAvg(null);
 try{
-var wR=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+place.latitude+"&longitude="+place.longitude+"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,precipitation_hours,windspeed_10m_max,windgusts_10m_max,relative_humidity_2m_mean,pressure_msl_mean,weathercode,uv_index_max&hourly=temperature_2m,weathercode,precipitation_probability,precipitation,windspeed_10m,windgusts_10m,relativehumidity_2m,pressure_msl,cloudcover,uv_index,dewpoint_2m,visibility&minutely_15=precipitation,rain,showers,weather_code&past_minutely_15=4&forecast_minutely_15=8&timezone=auto&forecast_days=13");
+var wR=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+place.latitude+"&longitude="+place.longitude+"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,precipitation_hours,windspeed_10m_max,windgusts_10m_max,relative_humidity_2m_mean,pressure_msl_mean,weathercode,uv_index_max,snowfall_sum&hourly=temperature_2m,weathercode,precipitation_probability,precipitation,snowfall,rain,windspeed_10m,windgusts_10m,relativehumidity_2m,pressure_msl,cloudcover,uv_index,dewpoint_2m,visibility,freezing_level_height&minutely_15=precipitation,rain,showers,weather_code&past_minutely_15=4&forecast_minutely_15=8&timezone=auto&forecast_days=13");
 // Fetch CAMS UV in parallel — CAMS uses a proper atmospheric photochemistry model
 // via Copernicus and correctly reports UV 12-20 at the equator, unlike the GFS-derived
 // UV in the main forecast API which is capped ~9 due to a simplified UVB scaling formula.
@@ -4428,7 +4776,7 @@ var ds=new Date(t+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"
 var camsUv=i<5?camsUvMaxForDate(t):null;
 var gfsUv=days.uv_index_max&&days.uv_index_max[i]!=null?Math.round(days.uv_index_max[i]):null;
 var uvMax=camsUv!=null?camsUv:gfsUv;
-return{date:ds,temp:temp,low:Math.round(days.temperature_2m_min[i]),type:i<3?"confirmed":i<7?"near":"estimated",condition:cond,note:"Live forecast via Open-Meteo",wind:mph<5?"very light":mph<10?"light":mph<20?"moderate":"fresh",windMph:mph,gustMph:Math.round((days.windgusts_10m_max[i]||mph*1.3)*0.621371),rain:days.precipitation_probability_max[i]||0,humidity:Math.round(days.relative_humidity_2m_mean[i]||55),pressure:Math.round(days.pressure_msl_mean[i]||1013),rainMm:parseFloat((days.precipitation_sum[i]||0).toFixed(1)),rainHours:Math.round(days.precipitation_hours[i]||0),uvMax:uvMax};
+return{date:ds,temp:temp,low:Math.round(days.temperature_2m_min[i]),type:i<3?"confirmed":i<7?"near":"estimated",condition:cond,note:"Live forecast via Open-Meteo",wind:mph<5?"very light":mph<10?"light":mph<20?"moderate":"fresh",windMph:mph,gustMph:Math.round((days.windgusts_10m_max[i]||mph*1.3)*0.621371),rain:days.precipitation_probability_max[i]||0,humidity:Math.round(days.relative_humidity_2m_mean[i]||55),pressure:Math.round(days.pressure_msl_mean[i]||1013),rainMm:parseFloat((days.precipitation_sum[i]||0).toFixed(1)),rainHours:Math.round(days.precipitation_hours[i]||0),uvMax:uvMax,snowMm:parseFloat((days.snowfall_sum&&days.snowfall_sum[i]||0).toFixed(1))};
 });
 // Merge CAMS hourly UV into the hourly array — replace GFS values for the first 5 days
 var mergedHourlyUv=hrs.uv_index.map(function(gfsVal,i){
@@ -4436,7 +4784,7 @@ var mergedHourlyUv=hrs.uv_index.map(function(gfsVal,i){
   var camsVal=t&&camsUvByTime[t]!=null?camsUvByTime[t]:null;
   return camsVal!=null?camsVal:gfsVal;
 });
-setHr({times:hrs.time,temps:hrs.temperature_2m,codes:hrs.weathercode,windMph:hrs.windspeed_10m.map(function(v){return Math.round((v||0)*0.621371);}),gusts:hrs.windgusts_10m.map(function(v){return Math.round((v||0)*0.621371);}),rain:hrs.precipitation_probability,rainMm:hrs.precipitation,humidity:hrs.relativehumidity_2m,pressure:hrs.pressure_msl,cloud:hrs.cloudcover,uv:mergedHourlyUv,dewpoint:hrs.dewpoint_2m,vis:hrs.visibility});
+setHr({times:hrs.time,temps:hrs.temperature_2m,codes:hrs.weathercode,windMph:hrs.windspeed_10m.map(function(v){return Math.round((v||0)*0.621371);}),gusts:hrs.windgusts_10m.map(function(v){return Math.round((v||0)*0.621371);}),rain:hrs.precipitation_probability,rainMm:hrs.precipitation,snowMm:hrs.snowfall,rainOnly:hrs.rain,humidity:hrs.relativehumidity_2m,pressure:hrs.pressure_msl,cloud:hrs.cloudcover,uv:mergedHourlyUv,dewpoint:hrs.dewpoint_2m,vis:hrs.visibility,freezingLevel:hrs.freezing_level_height});
 if(wJ.minutely_15&&wJ.minutely_15.time){setM15({times:wJ.minutely_15.time,precip:wJ.minutely_15.precipitation,rain:wJ.minutely_15.rain,showers:wJ.minutely_15.showers,codes:wJ.minutely_15.weather_code});}else{setM15(null);}
 setFd(data);
 setLat(place.latitude);setLon(place.longitude);
@@ -4509,6 +4857,8 @@ React.createElement('div', {}
 , iAp==="graphs"&&React.createElement(WeatherGraphs, {forecastData:iFd,hourlyRaw:iHr,u:u})
 , iAp==="radar"&&React.createElement(MapRadar, {locationName:iLn,forecastData:iFd,lat:iLat,lon:iLon})
 , iAp==="extremes"&&React.createElement(WeatherExtremes, {forecastData:iFd,locationName:iLn,u:u})
+, iAp==="historical"&&React.createElement(HistoricalWeather, {lat:iLat,lon:iLon,locationName:iLn,u:u,forecastData:iFd})
+, iAp==="compare"&&React.createElement(CompareLocations, {u:u})
 , iAp==="illness"&&React.createElement(IllnessAllergyDashboard, {forecastData:iFd,u:u,lat:iLat,lon:iLon,locationName:iLn})
 )
 )
