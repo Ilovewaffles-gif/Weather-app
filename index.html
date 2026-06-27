@@ -5022,9 +5022,11 @@ function AdminAnnotationsPanel(props){
 
   async function saveAnnotation(){
     if(!iFMsg.trim()){setMsg("Message is required.");return;}
-    if(lat==null||lon==null){setMsg("Error: location not loaded yet.");return;}
-    setSaving(true);setMsg("");
+    if(lat==null||lon==null){setMsg("Error: lat="+lat+" lon="+lon);return;}
+    setMsg("Step 1: starting…");
+    setSaving(true);
     var key=locKey(lat,lon);
+    setMsg("Step 2: key="+key);
     var newAnn={
       id:editIdx!=null?annotations[editIdx].id:Date.now().toString(36),
       severity:iFSev,
