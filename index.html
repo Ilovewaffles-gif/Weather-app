@@ -5025,12 +5025,12 @@ function AdminAnnotationsPanel(props){
     if(lat==null||lon==null){setMsg("Error: lat="+lat+" lon="+lon);return;}
     setSaving(true);setMsg("");
     var key=locKey(lat,lon);
-    var annId=(editIdx!=null&&annotations[editIdx])?annotations[editIdx].id:Date.now().toString(36);
+    var annId=(iEditIdx!=null&&annotations[iEditIdx])?annotations[iEditIdx].id:Date.now().toString(36);
     var authorEmail=(user&&user.email)||"unknown";
     var newAnn={id:annId,severity:iFSev,dayIndex:iFDay,message:iFMsg.trim(),adjustField:iFAdjF,adjustValue:parseFloat(iFAdjV)||0,internalNote:iFNote.trim(),locationName:locationName,createdAt:new Date().toISOString(),authorEmail:authorEmail};
     var updated;
-    if(editIdx!=null){
-      updated=annotations.map(function(a,i){return i===editIdx?newAnn:a;});
+    if(iEditIdx!=null){
+      updated=annotations.map(function(a,i){return i===iEditIdx?newAnn:a;});
     } else {
       updated=annotations.concat([newAnn]);
     }
