@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="Weather Forecast"/>
+  <meta name="apple-mobile-web-app-title" content="Weather Centre"/>
   <title>The Weather Centre</title>
   <link rel="manifest" href="#" id="pwa-manifest"/>
   <meta name="theme-color" content="#ff7700"/>
@@ -1864,41 +1864,64 @@ var lat=props.lat,lon=props.lon,locationName=props.locationName,u=props.u,foreca
 var status=useState("idle");var iStatus=status[0];var setStatus=status[1];
 var data=useState(null);var iData=data[0];var setData=data[1];
 var err=useState("");var iErr=err[0];var setErr=err[1];
-var selYear=useState(new Date().getFullYear()-1);var iYear=selYear[0];var setYear=selYear[1];
-var selMonth=useState(new Date().getMonth());var iMonth=selMonth[0];var setMonth=selMonth[1];
+var viewMode=useState("monthly");var iViewMode=viewMode[0];var setViewMode=viewMode[1];
+var NOW=new Date();var CUR_YEAR=NOW.getFullYear();var CUR_MONTH=NOW.getMonth();var CUR_DAY=NOW.getDate();
+var selYear=useState(CUR_YEAR-1);var iYear=selYear[0];var setYear=selYear[1];
+var selMonth=useState(CUR_MONTH);var iMonth=selMonth[0];var setMonth=selMonth[1];
+// Daily mode: start/end date strings
+var selStartDate=useState((CUR_YEAR-1)+"-"+(String(CUR_MONTH+1).padStart(2,"0"))+"-01");var iStartDate=selStartDate[0];var setStartDate=selStartDate[1];
+var selEndDate=useState((CUR_YEAR-1)+"-"+(String(CUR_MONTH+1).padStart(2,"0"))+"-07");var iEndDate=selEndDate[0];var setEndDate=selEndDate[1];
 var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var MFULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
+var YEARS=[2020,2021,2022,2023,2024,2025,2026];
+// For 2026, cap available months to those already past
+function maxMonthForYear(y){return y===CUR_YEAR?CUR_MONTH:11;}
+function handleSetYear(y){
+  setYear(y);
+  if(y===CUR_YEAR&&iMonth>CUR_MONTH)setMonth(CUR_MONTH);
+}
+// Build today string for max attr on date inputs
+var todayStr=CUR_YEAR+"-"+(String(CUR_MONTH+1).padStart(2,"0"))+"-"+String(CUR_DAY).padStart(2,"0");
+var archiveUrl=function(sy,ey){return "https://archive-api.open-meteo.com/v1/archive?latitude="+lat+"&longitude="+lon+"&start_date="+sy+"&end_date="+ey+"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,weathercode,sunshine_duration&timezone=auto";};
 async function fetchHistory(){
   if(!lat||!lon){setErr("Load a location first.");return;}
   setStatus("loading");setErr("");setData(null);
   try{
-    // Fetch the selected month's full daily data from the archive API
-    var y=iYear,m=iMonth;
-    var startD=y+"-"+(String(m+1).padStart(2,"0"))+"-01";
-    var lastDay=new Date(y,m+1,0).getDate();
-    var endD=y+"-"+(String(m+1).padStart(2,"0"))+"-"+lastDay;
-    // Also fetch same month for past 5 years for climatology
-    var years=[1,2,3,4,5].map(function(i){return y-i;});
-    var archiveUrl=function(sy,ey){return "https://archive-api.open-meteo.com/v1/archive?latitude="+lat+"&longitude="+lon+"&start_date="+sy+"&end_date="+ey+"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,weathercode,sunshine_duration&timezone=auto";};
+    var startD,endD,labelMonth,labelYear;
+    if(iViewMode==="monthly"){
+      var y=iYear,m=iMonth;
+      startD=y+"-"+(String(m+1).padStart(2,"0"))+"-01";
+      var lastDay=new Date(y,m+1,0).getDate();
+      // If current year+month, cap to today
+      if(y===CUR_YEAR&&m===CUR_MONTH)lastDay=CUR_DAY;
+      endD=y+"-"+(String(m+1).padStart(2,"0"))+"-"+String(lastDay).padStart(2,"0");
+      labelMonth=MFULL[m];labelYear=y;
+    } else {
+      startD=iStartDate;endD=iEndDate;
+      labelMonth=null;labelYear=null;
+    }
     var mainRes=await fetch(archiveUrl(startD,endD));
     if(!mainRes.ok)throw new Error("Archive API error");
     var mainJ=await mainRes.json();
-    // Fetch last year same date for comparison
-    var lyStart=(y-1)+"-"+(String(m+1).padStart(2,"0"))+"-01";
-    var lyEnd=(y-1)+"-"+(String(m+1).padStart(2,"0"))+"-"+lastDay;
-    var lyRes=await fetch(archiveUrl(lyStart,lyEnd));
-    var lyJ=lyRes.ok?await lyRes.json():null;
-    // Compute stats for the selected month
+    // Last year comparison (monthly mode only)
+    var lyJ=null;
+    if(iViewMode==="monthly"){
+      var lyStart=(iYear-1)+"-"+(String(iMonth+1).padStart(2,"0"))+"-01";
+      var lyLastDay=new Date(iYear-1,iMonth+1,0).getDate();
+      var lyEnd=(iYear-1)+"-"+(String(iMonth+1).padStart(2,"0"))+"-"+String(lyLastDay).padStart(2,"0");
+      var lyRes=await fetch(archiveUrl(lyStart,lyEnd));
+      lyJ=lyRes.ok?await lyRes.json():null;
+    }
+    var avg=function(a){return a.length?Math.round(a.reduce(function(s,v){return s+v;},0)/a.length*10)/10:null;};
+    var sum=function(a){return Math.round(a.reduce(function(s,v){return s+v;},0)*10)/10;};
     var temps=mainJ.daily.temperature_2m_max.filter(function(v){return v!=null;});
     var lows=mainJ.daily.temperature_2m_min.filter(function(v){return v!=null;});
     var precip=mainJ.daily.precipitation_sum.filter(function(v){return v!=null;});
     var winds=mainJ.daily.windspeed_10m_max.filter(function(v){return v!=null;});
     var sunshine=mainJ.daily.sunshine_duration;
-    var avg=function(a){return a.length?Math.round(a.reduce(function(s,v){return s+v;},0)/a.length*10)/10:null;};
-    var sum=function(a){return Math.round(a.reduce(function(s,v){return s+v;},0)*10)/10;};
-    // Day by day data for chart
     var days=mainJ.daily.time.map(function(t,i){return{
       date:new Date(t+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"}),
+      fullDate:new Date(t+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",year:"numeric"}),
       temp:mainJ.daily.temperature_2m_max[i],
       low:mainJ.daily.temperature_2m_min[i],
       rain:mainJ.daily.precipitation_sum[i]||0,
@@ -1906,7 +1929,6 @@ async function fetchHistory(){
       code:mainJ.daily.weathercode[i]||0,
       sun:sunshine&&sunshine[i]!=null?Math.round(sunshine[i]/3600):null
     };});
-    // Last year comparison
     var lyTemps=lyJ?lyJ.daily.temperature_2m_max.filter(function(v){return v!=null;}):[];
     var lyPrecip=lyJ?lyJ.daily.precipitation_sum.filter(function(v){return v!=null;}):[];
     setData({
@@ -1918,23 +1940,24 @@ async function fetchHistory(){
       rainDays:precip.filter(function(v){return v>=1;}).length,
       avgSunHrs:sunshine?avg(sunshine.map(function(v){return v!=null?Math.round(v/3600):null;}).filter(function(v){return v!=null;})):null,
       lyAvgHigh:avg(lyTemps),lyTotalRain:sum(lyPrecip),
-      location:locationName,month:MFULL[m],year:y
+      location:locationName,
+      label:labelMonth?(labelMonth+" "+labelYear):(iStartDate+" → "+iEndDate),
+      month:labelMonth,year:labelYear
     });
     setStatus("done");
   }catch(e){setErr("Could not fetch historical data: "+e.message);setStatus("error");}
 }
 if(!lat||!lon)return React.createElement('div', {style:{padding:"40px 20px",textAlign:"center",color:"#555"}}, "Search for a location to view its historical weather.");
-// Pre-compute climatology card to avoid IIFE inside JSX-less createElement tree
 var climoCard=null;
-if(iData&&forecastData&&forecastData.length>0){
+if(iData&&iViewMode==="monthly"&&forecastData&&forecastData.length>0){
   var todayF=forecastData[0];
   var hotDays=iData.days.filter(function(d){return d.temp!=null&&d.temp>=todayF.temp-2;}).length;
   var coldNights=iData.days.filter(function(d){return d.low!=null&&d.low<0;}).length;
   var heavyRainDays=iData.days.filter(function(d){return d.rain>=20;}).length;
   var climoFacts=[];
-  if(hotDays>0)climoFacts.push({icon:"🌡️",text:"Days as hot as today's forecast ("+fmtTemp(todayF.temp,u.temp)+"): "+hotDays+" in "+MFULL[iMonth]+" "+iYear});
-  if(coldNights>0)climoFacts.push({icon:"❄️",text:"Nights with sub-zero lows: "+coldNights+" in "+MFULL[iMonth]+" "+iYear});
-  if(heavyRainDays>0)climoFacts.push({icon:"🌧️",text:"Days with ≥20mm rain: "+heavyRainDays+" in "+MFULL[iMonth]+" "+iYear});
+  if(hotDays>0)climoFacts.push({icon:"🌡️",text:"Days as hot as today's forecast ("+fmtTemp(todayF.temp,u.temp)+"): "+hotDays+" in "+iData.label});
+  if(coldNights>0)climoFacts.push({icon:"❄️",text:"Nights with sub-zero lows: "+coldNights+" in "+iData.label});
+  if(heavyRainDays>0)climoFacts.push({icon:"🌧️",text:"Days with ≥20mm rain: "+heavyRainDays+" in "+iData.label});
   if(climoFacts.length>0){
     climoCard=React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px"}}
       , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "HOW DOES THIS COMPARE?")
@@ -1942,33 +1965,54 @@ if(iData&&forecastData&&forecastData.length>0){
     );
   }
 }
+// daily detail table (shown in daily mode or when days <= 14)
+var showTable=iViewMode==="daily"||(iData&&iData.days.length<=14);
 return(
 React.createElement('div', {style:{paddingBottom:40}}
 , React.createElement('div', {style:{fontSize:11,letterSpacing:3,color:"#ff7700",textTransform:"uppercase",marginBottom:16}}, "Historical Weather")
 , React.createElement('div', {style:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"16px",marginBottom:20}}
-  , React.createElement('div', {style:{fontSize:12,color:"#bbb",marginBottom:12}}, "Explore archived daily weather for any past month at ", React.createElement('b', {style:{color:"#e8dcc8"}}, locationName.split(",").slice(0,2).join(",")))
-  , React.createElement('div', {style:{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}
+  , React.createElement('div', {style:{fontSize:12,color:"#bbb",marginBottom:12}}, "Explore archived weather at ", React.createElement('b', {style:{color:"#e8dcc8"}}, locationName.split(",").slice(0,2).join(",")))
+  // View mode toggle
+  , React.createElement('div', {style:{display:"flex",gap:6,marginBottom:14}}
+    , React.createElement('button', {onClick:function(){setViewMode("monthly");setData(null);setStatus("idle");},style:{padding:"5px 14px",borderRadius:8,border:"1px solid "+(iViewMode==="monthly"?"#ff7700":"rgba(255,255,255,0.1)"),background:iViewMode==="monthly"?"rgba(255,119,0,0.2)":"transparent",color:iViewMode==="monthly"?"#ffaa44":"#777",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}, "📅 Monthly")
+    , React.createElement('button', {onClick:function(){setViewMode("daily");setData(null);setStatus("idle");},style:{padding:"5px 14px",borderRadius:8,border:"1px solid "+(iViewMode==="daily"?"#ff7700":"rgba(255,255,255,0.1)"),background:iViewMode==="daily"?"rgba(255,119,0,0.2)":"transparent",color:iViewMode==="daily"?"#ffaa44":"#777",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}, "📆 Daily Range")
+  )
+  , iViewMode==="monthly"&&React.createElement('div', {style:{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}
     , React.createElement('div', {}
       , React.createElement('div', {style:{fontSize:10,color:"#666",marginBottom:4}}, "MONTH")
       , React.createElement('div', {style:{display:"flex",gap:4,flexWrap:"wrap"}},
-        MONTHS.map(function(m,i){return React.createElement('button', {key:i,onClick:function(){setMonth(i);},style:{padding:"4px 8px",borderRadius:7,border:"1px solid "+(iMonth===i?"#ff7700":"rgba(255,255,255,0.1)"),background:iMonth===i?"rgba(255,119,0,0.2)":"transparent",color:iMonth===i?"#ffaa44":"#777",fontSize:11,cursor:"pointer"}},m);})
+        MONTHS.map(function(m,i){
+          var disabled=iYear===CUR_YEAR&&i>CUR_MONTH;
+          return React.createElement('button', {key:i,onClick:function(){if(!disabled)setMonth(i);},style:{padding:"4px 8px",borderRadius:7,border:"1px solid "+(iMonth===i&&!disabled?"#ff7700":"rgba(255,255,255,0.1)"),background:iMonth===i&&!disabled?"rgba(255,119,0,0.2)":"transparent",color:disabled?"#333":iMonth===i?"#ffaa44":"#777",fontSize:11,cursor:disabled?"default":"pointer",opacity:disabled?0.4:1}},m);
+        })
       )
     )
     , React.createElement('div', {}
       , React.createElement('div', {style:{fontSize:10,color:"#666",marginBottom:4}}, "YEAR")
       , React.createElement('div', {style:{display:"flex",gap:4,flexWrap:"wrap"}},
-        [2020,2021,2022,2023,2024,2025].map(function(y){return React.createElement('button', {key:y,onClick:function(){setYear(y);},style:{padding:"4px 10px",borderRadius:7,border:"1px solid "+(iYear===y?"#ff7700":"rgba(255,255,255,0.1)"),background:iYear===y?"rgba(255,119,0,0.2)":"transparent",color:iYear===y?"#ffaa44":"#777",fontSize:11,cursor:"pointer"}},y);})
+        YEARS.map(function(y){return React.createElement('button', {key:y,onClick:function(){handleSetYear(y);},style:{padding:"4px 10px",borderRadius:7,border:"1px solid "+(iYear===y?"#ff7700":"rgba(255,255,255,0.1)"),background:iYear===y?"rgba(255,119,0,0.2)":"transparent",color:iYear===y?"#ffaa44":"#777",fontSize:11,cursor:"pointer"}},y);})
       )
     )
     , React.createElement('button', {onClick:fetchHistory,disabled:iStatus==="loading",style:{padding:"8px 18px",borderRadius:10,border:"1px solid rgba(255,119,0,0.5)",background:"rgba(255,119,0,0.15)",color:"#ff9944",fontSize:12,cursor:iStatus==="loading"?"wait":"pointer",fontWeight:"bold"}}, iStatus==="loading"?"Loading...":"View "+MONTHS[iMonth]+" "+iYear)
+  )
+  , iViewMode==="daily"&&React.createElement('div', {style:{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}
+    , React.createElement('div', {}
+      , React.createElement('div', {style:{fontSize:10,color:"#666",marginBottom:4}}, "FROM")
+      , React.createElement('input', {type:"date",value:iStartDate,max:todayStr,onChange:function(e){setStartDate(e.target.value);},style:{padding:"7px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.05)",color:"#ddd",fontSize:12,outline:"none",fontFamily:"Georgia,serif"}})
+    )
+    , React.createElement('div', {}
+      , React.createElement('div', {style:{fontSize:10,color:"#666",marginBottom:4}}, "TO")
+      , React.createElement('input', {type:"date",value:iEndDate,max:todayStr,onChange:function(e){setEndDate(e.target.value);},style:{padding:"7px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.05)",color:"#ddd",fontSize:12,outline:"none",fontFamily:"Georgia,serif"}})
+    )
+    , React.createElement('div', {style:{fontSize:10,color:"#555",alignSelf:"center",paddingTop:14}}, "Max 90 days")
+    , React.createElement('button', {onClick:fetchHistory,disabled:iStatus==="loading"||!iStartDate||!iEndDate,style:{padding:"8px 18px",borderRadius:10,border:"1px solid rgba(255,119,0,0.5)",background:"rgba(255,119,0,0.15)",color:"#ff9944",fontSize:12,cursor:iStatus==="loading"?"wait":"pointer",fontWeight:"bold"}}, iStatus==="loading"?"Loading...":"View Range")
   )
 )
 , iErr&&React.createElement('div', {style:{padding:"12px",color:"#ff7744",fontSize:12,background:"rgba(255,80,0,0.08)",borderRadius:10,marginBottom:16}}, iErr)
 , iStatus==="loading"&&React.createElement('div', {style:{textAlign:"center",padding:"40px",color:"#555",fontSize:13}}, "Fetching archive data from Open-Meteo...")
 , iData&&iStatus==="done"&&(
   React.createElement('div', {}
-  // Summary stats row
-  , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10}}, iData.month+" "+iData.year+" — "+iData.location)
+  , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10}}, iData.label+" — "+iData.location)
   , React.createElement('div', {style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:8,marginBottom:20}},
     [
       {icon:"🌡️",label:"Avg High",val:iData.avgHigh!=null?fmtTemp(iData.avgHigh,u.temp):"—",sub:iData.lyAvgHigh!=null?"Last yr: "+fmtTemp(iData.lyAvgHigh,u.temp):"",col:tc(iData.avgHigh||0)},
@@ -1985,39 +2029,66 @@ React.createElement('div', {style:{paddingBottom:40}}
       s.sub&&React.createElement('div', {style:{fontSize:10,color:"#555",marginTop:2}}, s.sub)
     );})
   )
-  // Daily bar chart — temperature range
-  , React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginBottom:16}}
-    , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "DAILY TEMPERATURE RANGE")
-    , React.createElement('div', {style:{display:"flex",gap:2,alignItems:"flex-end",height:90,overflowX:"auto"}}
-      , iData.days.map(function(d,i){
-        var allTemps=iData.days.map(function(x){return x.temp;}).filter(function(v){return v!=null;});
-        var minV=Math.min.apply(null,allTemps)-2,maxV=Math.max.apply(null,allTemps)+2,range=maxV-minV;
-        var hHigh=range>0?Math.round(((d.temp-minV)/range)*80):40;
-        var hLow=range>0?Math.round(((d.low-minV)/range)*80):10;
-        return React.createElement('div', {key:i,style:{display:"flex",flexDirection:"column",alignItems:"center",gap:1,flexShrink:0,width:18}}
-          , React.createElement('div', {style:{width:8,height:Math.max(2,hHigh-hLow),background:tc(d.temp),borderRadius:"3px 3px 0 0",marginTop:"auto"}})
-          , React.createElement('div', {style:{width:8,height:Math.max(2,hLow),background:"#4a9fd4",borderRadius:"0 0 3px 3px"}})
-          , i%5===0&&React.createElement('div', {style:{fontSize:8,color:"#444",marginTop:2,transform:"rotate(-45deg)",transformOrigin:"center"}}, d.date.split(" ")[0])
-        );
-      })
-    )
-    , React.createElement('div', {style:{display:"flex",gap:12,marginTop:8,fontSize:10,color:"#555"}}
-      , React.createElement('span', {}, React.createElement('span', {style:{color:tc(iData.avgHigh||20)}}, "■"), " Daily High")
-      , React.createElement('span', {}, React.createElement('span', {style:{color:"#4a9fd4"}}, "■"), " Daily Low")
+  // Daily table — shown in daily mode or when small range
+  , showTable&&React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginBottom:16,overflowX:"auto"}}
+    , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "DAY BY DAY")
+    , React.createElement('table', {style:{width:"100%",borderCollapse:"collapse",fontSize:11}}
+      , React.createElement('thead', {}
+        , React.createElement('tr', {style:{color:"#555",borderBottom:"1px solid rgba(255,255,255,0.07)"}}
+          , React.createElement('th', {style:{textAlign:"left",padding:"4px 6px",fontWeight:"normal"}}, "Date")
+          , React.createElement('th', {style:{textAlign:"right",padding:"4px 6px",fontWeight:"normal"}}, "High")
+          , React.createElement('th', {style:{textAlign:"right",padding:"4px 6px",fontWeight:"normal"}}, "Low")
+          , React.createElement('th', {style:{textAlign:"right",padding:"4px 6px",fontWeight:"normal"}}, "Rain")
+          , React.createElement('th', {style:{textAlign:"right",padding:"4px 6px",fontWeight:"normal"}}, "Wind")
+          , iData.days[0]&&iData.days[0].sun!=null&&React.createElement('th', {style:{textAlign:"right",padding:"4px 6px",fontWeight:"normal"}}, "Sun")
+        )
+      )
+      , React.createElement('tbody', {},
+        iData.days.map(function(d,i){return React.createElement('tr', {key:i,style:{borderBottom:"1px solid rgba(255,255,255,0.04)",background:i%2===0?"transparent":"rgba(255,255,255,0.01)"}}
+          , React.createElement('td', {style:{padding:"5px 6px",color:"#bbb"}}, d.date)
+          , React.createElement('td', {style:{padding:"5px 6px",textAlign:"right",color:tc(d.temp||0),fontWeight:"bold"}}, d.temp!=null?fmtTemp(d.temp,u.temp):"—")
+          , React.createElement('td', {style:{padding:"5px 6px",textAlign:"right",color:"#4a9fd4"}}, d.low!=null?fmtTemp(d.low,u.temp):"—")
+          , React.createElement('td', {style:{padding:"5px 6px",textAlign:"right",color:d.rain>=10?"#4488ff":"#88aacc"}}, fmtRain(d.rain,u.rain))
+          , React.createElement('td', {style:{padding:"5px 6px",textAlign:"right",color:"#aaa"}}, fmtSpd(Math.round((d.wind||0)*0.621371),u.speed))
+          , d.sun!=null&&React.createElement('td', {style:{padding:"5px 6px",textAlign:"right",color:"#ffcc44"}}, d.sun+"h")
+        );})
+      )
     )
   )
-  // Daily rainfall bars
-  , React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginBottom:16}}
-    , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "DAILY RAINFALL")
-    , React.createElement('div', {style:{display:"flex",gap:2,alignItems:"flex-end",height:60,overflowX:"auto"}}
-      , iData.days.map(function(d,i){
-        var maxR=Math.max.apply(null,iData.days.map(function(x){return x.rain;}));
-        var h=maxR>0?Math.max(2,Math.round((d.rain/maxR)*55)):2;
-        return React.createElement('div', {key:i,style:{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0,width:18}}
-          , React.createElement('div', {style:{width:8,height:h,background:d.rain>=10?"#4488ff":"#88aacc",borderRadius:"3px 3px 0 0",marginTop:"auto"}})
-          , i%5===0&&React.createElement('div', {style:{fontSize:8,color:"#444",marginTop:2,transform:"rotate(-45deg)",transformOrigin:"center"}}, d.date.split(" ")[0])
-        );
-      })
+  // Bar charts — shown in monthly mode or larger ranges
+  , !showTable&&React.createElement('div', {}
+    , React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginBottom:16}}
+      , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "DAILY TEMPERATURE RANGE")
+      , React.createElement('div', {style:{display:"flex",gap:2,alignItems:"flex-end",height:90,overflowX:"auto"}}
+        , iData.days.map(function(d,i){
+          var allTemps=iData.days.map(function(x){return x.temp;}).filter(function(v){return v!=null;});
+          var minV=Math.min.apply(null,allTemps)-2,maxV=Math.max.apply(null,allTemps)+2,range=maxV-minV;
+          var hHigh=range>0?Math.round(((d.temp-minV)/range)*80):40;
+          var hLow=range>0?Math.round(((d.low-minV)/range)*80):10;
+          return React.createElement('div', {key:i,style:{display:"flex",flexDirection:"column",alignItems:"center",gap:1,flexShrink:0,width:18}}
+            , React.createElement('div', {style:{width:8,height:Math.max(2,hHigh-hLow),background:tc(d.temp),borderRadius:"3px 3px 0 0",marginTop:"auto"}})
+            , React.createElement('div', {style:{width:8,height:Math.max(2,hLow),background:"#4a9fd4",borderRadius:"0 0 3px 3px"}})
+            , i%5===0&&React.createElement('div', {style:{fontSize:8,color:"#444",marginTop:2,transform:"rotate(-45deg)",transformOrigin:"center"}}, d.date.split(" ")[0])
+          );
+        })
+      )
+      , React.createElement('div', {style:{display:"flex",gap:12,marginTop:8,fontSize:10,color:"#555"}}
+        , React.createElement('span', {}, React.createElement('span', {style:{color:tc(iData.avgHigh||20)}}, "■"), " Daily High")
+        , React.createElement('span', {}, React.createElement('span', {style:{color:"#4a9fd4"}}, "■"), " Daily Low")
+      )
+    )
+    , React.createElement('div', {style:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px",marginBottom:16}}
+      , React.createElement('div', {style:{fontSize:11,color:"#888",marginBottom:10,letterSpacing:1}}, "DAILY RAINFALL")
+      , React.createElement('div', {style:{display:"flex",gap:2,alignItems:"flex-end",height:60,overflowX:"auto"}}
+        , iData.days.map(function(d,i){
+          var maxR=Math.max.apply(null,iData.days.map(function(x){return x.rain;}));
+          var h=maxR>0?Math.max(2,Math.round((d.rain/maxR)*55)):2;
+          return React.createElement('div', {key:i,style:{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0,width:18}}
+            , React.createElement('div', {style:{width:8,height:h,background:d.rain>=10?"#4488ff":"#88aacc",borderRadius:"3px 3px 0 0",marginTop:"auto"}})
+            , i%5===0&&React.createElement('div', {style:{fontSize:8,color:"#444",marginTop:2,transform:"rotate(-45deg)",transformOrigin:"center"}}, d.date.split(" ")[0])
+          );
+        })
+      )
     )
   )
   , climoCard
@@ -5447,14 +5518,15 @@ fbDb.collection("users").doc(u.uid).get().then(function(doc){if(doc.exists){var 
 });
 return unsub;
 },[]);
-// Fetch admin annotations whenever location changes
+// Live-listen to admin annotations so all users see changes instantly
 useEffect(function(){
   if(!iLat||!iLon)return;
   var key=getRegionKey(iLat,iLon);
-  fbDb.collection("adminAnnotations").doc(key).get().then(function(doc){
+  var unsubscribe=fbDb.collection("adminAnnotations").doc(key).onSnapshot(function(doc){
     if(doc.exists&&doc.data().annotations){setAnnotations(doc.data().annotations);}
     else{setAnnotations([]);}
-  }).catch(function(){setAnnotations([]);});
+  },function(){setAnnotations([]);});
+  return function(){unsubscribe();};
 },[iLat,iLon]);
 useEffect(function(){
 var params=new URLSearchParams(window.location.search);
