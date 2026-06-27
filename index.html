@@ -5027,6 +5027,7 @@ function AdminAnnotationsPanel(props){
     setSaving(true);
     var key=locKey(lat,lon);
     setMsg("Step 2: key="+key);
+    setMsg("Step 3: building annotation…");
     var newAnn={
       id:editIdx!=null?annotations[editIdx].id:Date.now().toString(36),
       severity:iFSev,
@@ -5045,6 +5046,7 @@ function AdminAnnotationsPanel(props){
     } else {
       updated=annotations.concat([newAnn]);
     }
+    setMsg("Step 4: reaching try block…");
     try{
       var timeout=new Promise(function(_,rej){setTimeout(function(){rej(new Error("Timed out after 8s — check Firestore rules and network"));},8000);});
       await Promise.race([fbDb.collection("adminAnnotations").doc(key).set({annotations:updated,updatedAt:new Date().toISOString(),locationName:locationName}),timeout]);
