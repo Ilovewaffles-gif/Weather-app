@@ -5044,7 +5044,8 @@ function AdminAnnotationsPanel(props){
       updated=annotations.concat([newAnn]);
     }
     try{
-      await fbDb.collection("adminAnnotations").doc(key).set({annotations:updated,updatedAt:new Date().toISOString(),locationName:locationName});
+      var timeout=new Promise(function(_,rej){setTimeout(function(){rej(new Error("Timed out after 8s — check Firestore rules and network"));},8000);});
+      await Promise.race([fbDb.collection("adminAnnotations").doc(key).set({annotations:updated,updatedAt:new Date().toISOString(),locationName:locationName}),timeout]);
       setAnnotations(updated);
       setMsg("✓ Saved.");
       resetForm();
