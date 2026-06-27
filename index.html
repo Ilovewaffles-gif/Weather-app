@@ -5022,6 +5022,7 @@ function AdminAnnotationsPanel(props){
 
   async function saveAnnotation(){
     if(!iFMsg.trim()){setMsg("Message is required.");return;}
+    if(lat==null||lon==null){setMsg("Error: location not loaded yet.");return;}
     setSaving(true);setMsg("");
     var key=locKey(lat,lon);
     var newAnn={
@@ -5047,8 +5048,12 @@ function AdminAnnotationsPanel(props){
       setAnnotations(updated);
       setMsg("✓ Saved.");
       resetForm();
-    }catch(e){setMsg("Error saving: "+e.message);}
-    setSaving(false);
+    }catch(e){
+      setMsg("Error saving: "+(e.message||e.code||JSON.stringify(e)));
+      console.error("saveAnnotation error:",e);
+    }finally{
+      setSaving(false);
+    }
   }
 
   async function deleteAnnotation(idx){
