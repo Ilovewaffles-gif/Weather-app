@@ -5038,7 +5038,7 @@ function AdminAnnotationsPanel(props){
       internalNote:iFNote.trim(),
       locationName:locationName,
       createdAt:new Date().toISOString(),
-      authorEmail:user.email,
+      authorEmail:(user&&user.email)||"unknown",
     };
     var updated;
     if(editIdx!=null){
