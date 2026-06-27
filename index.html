@@ -5377,7 +5377,10 @@ function AdminAnnotationsBanner(props){
   var annotations=props.annotations,forecastData=props.forecastData,dayIndex=props.dayIndex;
   // Filter: if dayIndex provided, show matching + all-day; otherwise show all
   var visible=(annotations||[]).filter(function(ann){
-    if(dayIndex!=null)return ann.dayIndex<0||ann.dayIndex===dayIndex;
+    if(dayIndex!=null){
+      var ids=ann.dayIndices&&ann.dayIndices.length?ann.dayIndices:[ann.dayIndex!=null?ann.dayIndex:-1];
+      return ids.indexOf(-1)>=0||ids.indexOf(dayIndex)>=0;
+    }
     return true;
   });
   if(!visible.length)return null;
