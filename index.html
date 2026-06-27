@@ -5083,138 +5083,78 @@ function isAdmin(user){ return user && user.email && user.email.toLowerCase() ==
 function locKey(lat,lon){ return Math.round(lat*10)/10+"_"+Math.round(lon*10)/10; }
 
 // ── Region system ────────────────────────────────────────────────────────────
-// Annotations can be scoped to a named region so one annotation covers
-// everyone in e.g. "South-East England" rather than a single lat/lon point.
+// Annotations are scoped to one of the four UK countries, or a broad
+// international country/territory bucket for non-UK locations.
 var REGIONS = [
-  // ── UK (most specific — checked first due to smallest area) ──────────────
-  {key:"region_london",          label:"London",                      latMin:51.3, latMax:51.7, lonMin:-0.6,  lonMax:0.3},
-  {key:"region_se-england",      label:"South-East England",          latMin:50.7, latMax:51.9, lonMin:-1.0,  lonMax:1.8},
-  {key:"region_sw-england",      label:"South-West England",          latMin:49.9, latMax:51.5, lonMin:-5.8,  lonMax:-1.0},
-  {key:"region_e-england",       label:"East of England",             latMin:51.5, latMax:53.0, lonMin:-0.5,  lonMax:2.0},
-  {key:"region_emidlands",       label:"East Midlands",               latMin:52.0, latMax:53.5, lonMin:-1.8,  lonMax:0.0},
-  {key:"region_wmidlands",       label:"West Midlands",               latMin:51.8, latMax:53.2, lonMin:-3.0,  lonMax:-1.3},
-  {key:"region_yorkshire",       label:"Yorkshire & Humber",          latMin:53.3, latMax:54.2, lonMin:-2.5,  lonMax:0.1},
-  {key:"region_nw-england",      label:"North-West England",          latMin:53.2, latMax:55.0, lonMin:-3.5,  lonMax:-1.8},
-  {key:"region_ne-england",      label:"North-East England",          latMin:54.2, latMax:55.8, lonMin:-2.5,  lonMax:0.0},
-  {key:"region_wales",           label:"Wales",                       latMin:51.3, latMax:53.5, lonMin:-5.4,  lonMax:-2.6},
-  {key:"region_s-scotland",      label:"Southern Scotland",           latMin:54.6, latMax:56.5, lonMin:-6.0,  lonMax:-1.5},
-  {key:"region_c-scotland",      label:"Central Scotland",            latMin:56.0, latMax:57.5, lonMin:-6.5,  lonMax:-2.0},
-  {key:"region_n-scotland",      label:"Northern Scotland & Highlands",latMin:57.0, latMax:58.7, lonMin:-7.0,  lonMax:-2.5},
-  {key:"region_n-isles",         label:"Northern Isles",              latMin:59.0, latMax:60.9, lonMin:-3.5,  lonMax:-0.7},
-  {key:"region_n-ireland",       label:"Northern Ireland",            latMin:53.9, latMax:55.4, lonMin:-8.2,  lonMax:-5.4},
-  {key:"region_ireland-n",       label:"Northern Ireland & Border",   latMin:53.5, latMax:55.4, lonMin:-8.5,  lonMax:-5.9},
-  {key:"region_ireland-s",       label:"Southern Ireland",            latMin:51.4, latMax:53.5, lonMin:-10.5, lonMax:-6.0},
-  // ── France ───────────────────────────────────────────────────────────────
-  {key:"region_france-n",        label:"Northern France",             latMin:47.5, latMax:51.1, lonMin:-5.0,  lonMax:3.0},
-  {key:"region_france-paris",    label:"Paris & Île-de-France",       latMin:48.0, latMax:49.5, lonMin:1.3,   lonMax:3.5},
-  {key:"region_france-ne",       label:"North-East France & Alsace",  latMin:47.5, latMax:50.0, lonMin:4.5,   lonMax:8.3},
-  {key:"region_france-sw",       label:"South-West France & Bordeaux",latMin:43.0, latMax:47.5, lonMin:-2.5,  lonMax:3.5},
-  {key:"region_france-se",       label:"South-East France & Provence",latMin:43.0, latMax:47.0, lonMin:3.5,   lonMax:7.8},
-  {key:"region_france-riviera",  label:"French Riviera & Côte d'Azur",latMin:43.0, latMax:44.5, lonMin:5.5,   lonMax:7.8},
-  // ── Iberian Peninsula ────────────────────────────────────────────────────
-  {key:"region_spain-n",         label:"Northern Spain",              latMin:41.5, latMax:44.0, lonMin:-9.5,  lonMax:3.5},
-  {key:"region_spain-c",         label:"Central Spain & Madrid",      latMin:38.5, latMax:42.0, lonMin:-7.5,  lonMax:-1.0},
-  {key:"region_spain-s",         label:"Southern Spain & Andalucía",  latMin:35.9, latMax:38.5, lonMin:-9.5,  lonMax:-1.5},
-  {key:"region_spain-e",         label:"Eastern Spain & Valencia",    latMin:37.0, latMax:42.0, lonMin:-1.0,  lonMax:3.5},
-  {key:"region_portugal",        label:"Portugal",                    latMin:36.9, latMax:42.2, lonMin:-9.5,  lonMax:-6.1},
-  {key:"region_canary-islands",  label:"Canary Islands",              latMin:27.6, latMax:29.4, lonMin:-18.2, lonMax:-13.3},
-  // ── Benelux ───────────────────────────────────────────────────────────────
-  {key:"region_netherlands",     label:"Netherlands",                 latMin:50.7, latMax:53.6, lonMin:3.3,   lonMax:7.3},
-  {key:"region_belgium",         label:"Belgium",                     latMin:49.4, latMax:51.6, lonMin:2.5,   lonMax:6.5},
-  {key:"region_luxembourg",      label:"Luxembourg",                  latMin:49.4, latMax:50.2, lonMin:5.7,   lonMax:6.6},
-  // ── Germany ───────────────────────────────────────────────────────────────
-  {key:"region_germany-n",       label:"Northern Germany",            latMin:52.0, latMax:55.1, lonMin:6.0,   lonMax:15.0},
-  {key:"region_germany-c",       label:"Central Germany",             latMin:50.0, latMax:52.5, lonMin:7.0,   lonMax:15.0},
-  {key:"region_germany-s",       label:"Southern Germany & Bavaria",  latMin:47.3, latMax:50.5, lonMin:7.5,   lonMax:13.9},
-  // ── Alpine region ────────────────────────────────────────────────────────
-  {key:"region_switzerland",     label:"Switzerland",                 latMin:45.8, latMax:47.9, lonMin:5.9,   lonMax:10.5},
-  {key:"region_austria",         label:"Austria",                     latMin:46.3, latMax:49.1, lonMin:9.5,   lonMax:17.2},
-  // ── Italy ────────────────────────────────────────────────────────────────
-  {key:"region_italy-n",         label:"Northern Italy",              latMin:44.0, latMax:47.1, lonMin:6.6,   lonMax:14.0},
-  {key:"region_italy-c",         label:"Central Italy & Rome",        latMin:41.0, latMax:44.5, lonMin:10.0,  lonMax:16.0},
-  {key:"region_italy-s",         label:"Southern Italy & Sicily",     latMin:36.6, latMax:41.5, lonMin:11.0,  lonMax:18.5},
+  // ── UK Countries (checked first — most specific) ─────────────────────────
+  {key:"region_england",       label:"England",          latMin:49.8, latMax:55.9, lonMin:-6.4,  lonMax:2.0},
+  {key:"region_scotland",      label:"Scotland",         latMin:54.5, latMax:60.9, lonMin:-8.0,  lonMax:-0.7},
+  {key:"region_wales",         label:"Wales",            latMin:51.3, latMax:53.5, lonMin:-5.4,  lonMax:-2.6},
+  {key:"region_n-ireland",     label:"Northern Ireland", latMin:53.9, latMax:55.4, lonMin:-8.2,  lonMax:-5.4},
+  // ── Ireland ──────────────────────────────────────────────────────────────
+  {key:"region_ireland",       label:"Ireland",          latMin:51.4, latMax:55.4, lonMin:-10.5, lonMax:-6.0},
+  // ── Western Europe ───────────────────────────────────────────────────────
+  {key:"region_france",        label:"France",           latMin:42.3, latMax:51.1, lonMin:-5.2,  lonMax:8.3},
+  {key:"region_germany",       label:"Germany",          latMin:47.3, latMax:55.1, lonMin:6.0,   lonMax:15.0},
+  {key:"region_spain",         label:"Spain",            latMin:35.9, latMax:44.0, lonMin:-9.5,  lonMax:4.5},
+  {key:"region_portugal",      label:"Portugal",         latMin:36.9, latMax:42.2, lonMin:-9.5,  lonMax:-6.1},
+  {key:"region_italy",         label:"Italy",            latMin:36.6, latMax:47.1, lonMin:6.6,   lonMax:18.5},
+  {key:"region_netherlands",   label:"Netherlands",      latMin:50.7, latMax:53.6, lonMin:3.3,   lonMax:7.3},
+  {key:"region_belgium",       label:"Belgium",          latMin:49.4, latMax:51.6, lonMin:2.5,   lonMax:6.5},
+  {key:"region_switzerland",   label:"Switzerland",      latMin:45.8, latMax:47.9, lonMin:5.9,   lonMax:10.5},
+  {key:"region_austria",       label:"Austria",          latMin:46.3, latMax:49.1, lonMin:9.5,   lonMax:17.2},
   // ── Scandinavia ──────────────────────────────────────────────────────────
-  {key:"region_norway-s",        label:"Southern Norway",             latMin:57.9, latMax:62.5, lonMin:4.5,   lonMax:12.0},
-  {key:"region_norway-n",        label:"Northern Norway",             latMin:62.5, latMax:71.2, lonMin:13.0,  lonMax:31.0},
-  {key:"region_sweden-s",        label:"Southern Sweden",             latMin:55.3, latMax:59.5, lonMin:10.9,  lonMax:19.0},
-  {key:"region_sweden-n",        label:"Northern Sweden",             latMin:59.5, latMax:69.1, lonMin:11.0,  lonMax:24.2},
-  {key:"region_denmark",         label:"Denmark",                     latMin:54.5, latMax:57.8, lonMin:8.0,   lonMax:15.3},
-  {key:"region_finland-s",       label:"Southern Finland",            latMin:59.8, latMax:63.0, lonMin:19.5,  lonMax:31.6},
-  {key:"region_finland-n",       label:"Northern Finland & Lapland",  latMin:63.0, latMax:70.1, lonMin:20.0,  lonMax:31.6},
+  {key:"region_norway",        label:"Norway",           latMin:57.9, latMax:71.2, lonMin:4.5,   lonMax:31.0},
+  {key:"region_sweden",        label:"Sweden",           latMin:55.3, latMax:69.1, lonMin:10.9,  lonMax:24.2},
+  {key:"region_denmark",       label:"Denmark",          latMin:54.5, latMax:57.8, lonMin:8.0,   lonMax:15.3},
+  {key:"region_finland",       label:"Finland",          latMin:59.8, latMax:70.1, lonMin:19.5,  lonMax:31.6},
   // ── Eastern Europe ───────────────────────────────────────────────────────
-  {key:"region_poland",          label:"Poland",                      latMin:49.0, latMax:55.0, lonMin:14.1,  lonMax:24.2},
-  {key:"region_czechia",         label:"Czechia & Slovakia",          latMin:47.7, latMax:51.1, lonMin:12.0,  lonMax:22.6},
-  {key:"region_hungary",         label:"Hungary & Romania",           latMin:43.6, latMax:49.0, lonMin:16.0,  lonMax:30.0},
-  {key:"region_balkans",         label:"Balkans",                     latMin:39.6, latMax:47.0, lonMin:13.4,  lonMax:28.6},
-  {key:"region_ukraine",         label:"Ukraine & Moldova",           latMin:44.3, latMax:52.4, lonMin:22.1,  lonMax:40.2},
-  {key:"region_baltics",         label:"Baltic States",               latMin:53.9, latMax:59.7, lonMin:20.9,  lonMax:28.3},
-  // ── Mediterranean Islands ────────────────────────────────────────────────
-  {key:"region_greece",          label:"Greece",                      latMin:34.8, latMax:42.0, lonMin:19.3,  lonMax:29.7},
-  {key:"region_turkey-w",        label:"Western Turkey",              latMin:36.0, latMax:42.1, lonMin:25.9,  lonMax:33.0},
-  {key:"region_turkey-e",        label:"Eastern Turkey",              latMin:36.5, latMax:42.1, lonMin:33.0,  lonMax:44.8},
+  {key:"region_poland",        label:"Poland",           latMin:49.0, latMax:55.0, lonMin:14.1,  lonMax:24.2},
+  {key:"region_czechia",       label:"Czechia",          latMin:48.5, latMax:51.1, lonMin:12.1,  lonMax:18.9},
+  {key:"region_slovakia",      label:"Slovakia",         latMin:47.7, latMax:49.6, lonMin:16.8,  lonMax:22.6},
+  {key:"region_hungary",       label:"Hungary",          latMin:45.7, latMax:48.6, lonMin:16.1,  lonMax:22.9},
+  {key:"region_romania",       label:"Romania",          latMin:43.6, latMax:48.3, lonMin:20.2,  lonMax:30.0},
+  {key:"region_ukraine",       label:"Ukraine",          latMin:44.3, latMax:52.4, lonMin:22.1,  lonMax:40.2},
+  {key:"region_greece",        label:"Greece",           latMin:34.8, latMax:42.0, lonMin:19.3,  lonMax:29.7},
+  {key:"region_turkey",        label:"Turkey",           latMin:36.0, latMax:42.1, lonMin:25.9,  lonMax:44.8},
+  {key:"region_baltics",       label:"Baltic States",    latMin:53.9, latMax:59.7, lonMin:20.9,  lonMax:28.3},
   // ── North America ────────────────────────────────────────────────────────
-  {key:"region_us-new-england",  label:"US New England",              latMin:41.2, latMax:47.5, lonMin:-73.7, lonMax:-66.9},
-  {key:"region_us-mid-atlantic", label:"US Mid-Atlantic",             latMin:37.0, latMax:42.0, lonMin:-79.8, lonMax:-73.9},
-  {key:"region_us-southeast",    label:"US Southeast",                latMin:24.4, latMax:37.0, lonMin:-92.0, lonMax:-75.0},
-  {key:"region_us-florida",      label:"Florida",                     latMin:24.4, latMax:31.0, lonMin:-87.6, lonMax:-79.9},
-  {key:"region_us-great-lakes",  label:"US Great Lakes",              latMin:40.5, latMax:47.5, lonMin:-92.0, lonMax:-75.0},
-  {key:"region_us-midwest",      label:"US Midwest & Plains",         latMin:36.0, latMax:49.0, lonMin:-104.0,lonMax:-85.0},
-  {key:"region_us-texas",        label:"Texas",                       latMin:25.8, latMax:36.5, lonMin:-106.6,lonMax:-93.5},
-  {key:"region_us-mountain",     label:"US Mountain West",            latMin:31.3, latMax:49.0, lonMin:-116.0,lonMax:-104.0},
-  {key:"region_us-pacific-sw",   label:"US Pacific South-West",       latMin:32.5, latMax:42.0, lonMin:-124.4,lonMax:-114.0},
-  {key:"region_us-pacific-nw",   label:"US Pacific North-West",       latMin:42.0, latMax:49.0, lonMin:-124.7,lonMax:-116.0},
-  {key:"region_us-alaska",       label:"Alaska",                      latMin:54.6, latMax:71.4, lonMin:-168.0,lonMax:-130.0},
-  {key:"region_us-hawaii",       label:"Hawaii",                      latMin:18.9, latMax:22.2, lonMin:-160.3,lonMax:-154.8},
-  {key:"region_canada-bc",       label:"British Columbia",            latMin:48.3, latMax:60.0, lonMin:-139.1,lonMax:-114.0},
-  {key:"region_canada-prairies", label:"Canadian Prairies",           latMin:49.0, latMax:60.0, lonMin:-120.0,lonMax:-95.0},
-  {key:"region_canada-ontario",  label:"Ontario & Quebec",            latMin:42.0, latMax:57.0, lonMin:-95.0, lonMax:-57.0},
-  {key:"region_canada-atlantic", label:"Atlantic Canada",             latMin:43.4, latMax:52.0, lonMin:-67.0, lonMax:-52.6},
+  {key:"region_usa",           label:"United States",    latMin:24.4, latMax:49.4, lonMin:-125.0,lonMax:-66.9},
+  {key:"region_canada",        label:"Canada",           latMin:42.0, latMax:83.0, lonMin:-141.0,lonMax:-52.6},
+  {key:"region_mexico",        label:"Mexico",           latMin:14.5, latMax:32.7, lonMin:-117.1,lonMax:-86.7},
   // ── Central America & Caribbean ──────────────────────────────────────────
-  {key:"region_mexico-n",        label:"Northern Mexico",             latMin:22.0, latMax:32.7, lonMin:-117.1,lonMax:-97.0},
-  {key:"region_mexico-s",        label:"Southern Mexico & Yucatan",   latMin:14.5, latMax:22.5, lonMin:-102.0,lonMax:-86.7},
-  {key:"region_caribbean",       label:"Caribbean",                   latMin:10.0, latMax:27.3, lonMin:-85.0, lonMax:-59.4},
-  {key:"region_c-america",       label:"Central America",             latMin:7.2,  latMax:18.5, lonMin:-92.2, lonMax:-77.2},
+  {key:"region_caribbean",     label:"Caribbean",        latMin:10.0, latMax:27.3, lonMin:-85.0, lonMax:-59.4},
+  {key:"region_c-america",     label:"Central America",  latMin:7.2,  latMax:18.5, lonMin:-92.2, lonMax:-77.2},
   // ── South America ────────────────────────────────────────────────────────
-  {key:"region_colombia-venezuela",label:"Colombia & Venezuela",      latMin:0.6,  latMax:12.5, lonMin:-74.0, lonMax:-59.8},
-  {key:"region_brazil-n",        label:"Northern Brazil & Amazon",    latMin:-5.0, latMax:5.3,  lonMin:-73.9, lonMax:-44.4},
-  {key:"region_brazil-ne",       label:"North-East Brazil",           latMin:-15.0,latMax:0.0,  lonMin:-48.0, lonMax:-34.8},
-  {key:"region_brazil-se",       label:"South-East Brazil",           latMin:-24.0,latMax:-15.0,lonMin:-51.0, lonMax:-39.0},
-  {key:"region_brazil-s",        label:"Southern Brazil",             latMin:-34.0,latMax:-22.0,lonMin:-57.6, lonMax:-48.3},
-  {key:"region_argentina-n",     label:"Northern Argentina & Paraguay",latMin:-28.0,latMax:-15.0,lonMin:-69.6,lonMax:-54.2},
-  {key:"region_argentina-s",     label:"Southern Argentina & Chile",  latMin:-56.0,latMax:-28.0,lonMin:-75.7, lonMax:-52.6},
-  {key:"region_peru-bolivia",    label:"Peru, Bolivia & Ecuador",     latMin:-18.4,latMax:2.0,  lonMin:-82.0, lonMax:-60.0},
+  {key:"region_brazil",        label:"Brazil",           latMin:-34.0,latMax:5.3,  lonMin:-73.9, lonMax:-34.8},
+  {key:"region_argentina",     label:"Argentina",        latMin:-56.0,latMax:-21.8,lonMin:-73.6, lonMax:-53.6},
+  {key:"region_colombia",      label:"Colombia",         latMin:-4.2, latMax:13.4, lonMin:-79.0, lonMax:-66.8},
+  {key:"region_peru",          label:"Peru",             latMin:-18.4,latMax:0.0,  lonMin:-82.0, lonMax:-68.7},
+  {key:"region_chile",         label:"Chile",            latMin:-56.0,latMax:-17.5,lonMin:-75.7, lonMax:-66.4},
   // ── Middle East ──────────────────────────────────────────────────────────
-  {key:"region_levant",          label:"Levant & Israel",             latMin:29.5, latMax:37.4, lonMin:34.3,  lonMax:42.5},
-  {key:"region_gulf",            label:"Gulf States",                 latMin:22.6, latMax:30.1, lonMin:46.6,  lonMax:60.0},
-  {key:"region_iran-iraq",       label:"Iran & Iraq",                 latMin:29.1, latMax:39.8, lonMin:38.8,  lonMax:63.3},
-  {key:"region_arabian-pen",     label:"Arabian Peninsula",           latMin:12.5, latMax:24.5, lonMin:41.5,  lonMax:60.0},
+  {key:"region_israel",        label:"Israel & Palestine",latMin:29.5,latMax:33.4, lonMin:34.2,  lonMax:35.9},
+  {key:"region_saudi",         label:"Saudi Arabia",     latMin:16.3, latMax:32.2, lonMin:36.5,  lonMax:55.7},
+  {key:"region_uae",           label:"UAE",              latMin:22.6, latMax:26.1, lonMin:51.6,  lonMax:56.4},
+  {key:"region_iran",          label:"Iran",             latMin:25.1, latMax:39.8, lonMin:44.0,  lonMax:63.3},
+  {key:"region_iraq",          label:"Iraq",             latMin:29.1, latMax:37.4, lonMin:38.8,  lonMax:48.6},
   // ── Africa ───────────────────────────────────────────────────────────────
-  {key:"region_n-africa-w",      label:"North-West Africa & Morocco", latMin:27.7, latMax:37.3, lonMin:-17.1, lonMax:0.0},
-  {key:"region_n-africa-e",      label:"North-East Africa & Egypt",   latMin:22.0, latMax:33.0, lonMin:24.7,  lonMax:37.0},
-  {key:"region_w-africa",        label:"West Africa",                 latMin:4.3,  latMax:20.0, lonMin:-17.5, lonMax:15.0},
-  {key:"region_e-africa",        label:"East Africa",                 latMin:-12.0,latMax:15.0, lonMin:28.0,  lonMax:51.4},
-  {key:"region_s-africa",        label:"Southern Africa",             latMin:-35.0,latMax:-12.0,lonMin:11.7,  lonMax:40.9},
+  {key:"region_morocco",       label:"Morocco",          latMin:27.7, latMax:36.0, lonMin:-17.1, lonMax:-1.0},
+  {key:"region_egypt",         label:"Egypt",            latMin:22.0, latMax:31.7, lonMin:24.7,  lonMax:37.0},
+  {key:"region_nigeria",       label:"Nigeria",          latMin:4.3,  latMax:13.9, lonMin:2.7,   lonMax:14.7},
+  {key:"region_kenya",         label:"Kenya",            latMin:-4.7, latMax:4.6,  lonMin:33.9,  lonMax:41.9},
+  {key:"region_s-africa",      label:"South Africa",     latMin:-35.0,latMax:-22.1,lonMin:16.5,  lonMax:33.0},
   // ── Asia ─────────────────────────────────────────────────────────────────
-  {key:"region_russia-w",        label:"Western Russia",              latMin:51.3, latMax:68.0, lonMin:33.0,  lonMax:60.0},
-  {key:"region_russia-e",        label:"Eastern Russia & Siberia",    latMin:50.0, latMax:73.0, lonMin:60.0,  lonMax:141.0},
-  {key:"region_c-asia",          label:"Central Asia",                latMin:37.2, latMax:55.4, lonMin:51.0,  lonMax:87.3},
-  {key:"region_india-n",         label:"Northern India",              latMin:26.0, latMax:37.1, lonMin:68.1,  lonMax:88.2},
-  {key:"region_india-s",         label:"Southern India & Sri Lanka",  latMin:5.9,  latMax:26.0, lonMin:67.0,  lonMax:80.4},
-  {key:"region_pakistan",        label:"Pakistan & Afghanistan",      latMin:23.6, latMax:38.5, lonMin:60.8,  lonMax:74.9},
-  {key:"region_bangladesh",      label:"Bangladesh & Myanmar",        latMin:15.9, latMax:27.6, lonMin:88.0,  lonMax:101.2},
-  {key:"region_china-n",         label:"Northern China",              latMin:38.0, latMax:53.6, lonMin:98.5,  lonMax:135.1},
-  {key:"region_china-s",         label:"Southern China",              latMin:18.2, latMax:38.5, lonMin:97.4,  lonMax:122.9},
-  {key:"region_japan",           label:"Japan",                       latMin:24.3, latMax:45.6, lonMin:122.9, lonMax:145.9},
-  {key:"region_korea",           label:"Korean Peninsula",            latMin:33.1, latMax:43.0, lonMin:124.6, lonMax:130.9},
-  {key:"region_se-asia-mainland",label:"South-East Asia Mainland",   latMin:5.6,  latMax:28.6, lonMin:97.3,  lonMax:109.5},
-  {key:"region_se-asia-islands", label:"South-East Asia Islands",     latMin:-8.5, latMax:20.5, lonMin:95.0,  lonMax:141.0},
+  {key:"region_russia",        label:"Russia",           latMin:41.2, latMax:82.0, lonMin:19.9,  lonMax:190.0},
+  {key:"region_india",         label:"India",            latMin:5.9,  latMax:37.1, lonMin:68.1,  lonMax:97.4},
+  {key:"region_china",         label:"China",            latMin:18.2, latMax:53.6, lonMin:73.5,  lonMax:135.1},
+  {key:"region_japan",         label:"Japan",            latMin:24.3, latMax:45.6, lonMin:122.9, lonMax:145.9},
+  {key:"region_korea",         label:"South Korea",      latMin:33.1, latMax:38.6, lonMin:126.1, lonMax:129.6},
+  {key:"region_pakistan",      label:"Pakistan",         latMin:23.6, latMax:37.1, lonMin:60.8,  lonMax:77.8},
+  {key:"region_bangladesh",    label:"Bangladesh",       latMin:20.7, latMax:26.6, lonMin:88.0,  lonMax:92.7},
+  {key:"region_indonesia",     label:"Indonesia",        latMin:-8.5, latMax:6.1,  lonMin:95.0,  lonMax:141.0},
   // ── Oceania ──────────────────────────────────────────────────────────────
-  {key:"region_aus-sw",          label:"South-West Australia",        latMin:-35.2,latMax:-25.0,lonMin:113.1, lonMax:126.0},
-  {key:"region_aus-se",          label:"South-East Australia",        latMin:-39.2,latMax:-28.0,lonMin:138.5, lonMax:154.0},
-  {key:"region_aus-qld",         label:"Queensland",                  latMin:-29.2,latMax:-10.7,lonMin:137.9, lonMax:153.6},
-  {key:"region_aus-nt",          label:"Northern Territory",          latMin:-26.0,latMax:-10.9,lonMin:129.0, lonMax:138.0},
-  {key:"region_nz-n",            label:"New Zealand North Island",    latMin:-41.7,latMax:-34.4,lonMin:172.5, lonMax:178.6},
-  {key:"region_nz-s",            label:"New Zealand South Island",    latMin:-46.7,latMax:-40.5,lonMin:166.4, lonMax:174.4},
+  {key:"region_australia",     label:"Australia",        latMin:-39.2,latMax:-10.7,lonMin:113.1, lonMax:153.6},
+  {key:"region_nz",            label:"New Zealand",      latMin:-46.7,latMax:-34.4,lonMin:166.4, lonMax:178.6},
 ];
 
 function getRegion(lat,lon){
@@ -5246,6 +5186,7 @@ var ANN_LEVELS = {
   caution: {col:"#ffcc00", bg:"rgba(255,204,0,0.08)",  border:"rgba(255,204,0,0.30)",  icon:"⚠️"},
   warning: {col:"#ff8800", bg:"rgba(255,136,0,0.10)",  border:"rgba(255,136,0,0.35)",  icon:"🔶"},
   severe:  {col:"#ff2200", bg:"rgba(255,34,0,0.10)",   border:"rgba(255,34,0,0.40)",   icon:"🚨"},
+  extreme: {col:"#cc00ff", bg:"rgba(180,0,255,0.12)",  border:"rgba(180,0,255,0.50)",  icon:"🟣"},
 };
 
 // ── AdminAnnotationsPanel ───────────────────────────────────────────────────
@@ -5261,7 +5202,7 @@ function AdminAnnotationsPanel(props){
 
   // Form state
   var fSeverity=useState("warning");var iFSev=fSeverity[0];var setFSev=fSeverity[1];
-  var fDayIdx=useState(-1);var iFDay=fDayIdx[0];var setFDay=fDayIdx[1]; // -1 = all days
+  var fDayIdxs=useState(new Set([-1]));var iFDays=fDayIdxs[0];var setFDays=fDayIdxs[1]; // Set of day indices; -1 = all days
   var fMessage=useState("");var iFMsg=fMessage[0];var setFMsg=fMessage[1];
   var fAdjField=useState("general");var iFAdjF=fAdjField[0];var setFAdjF=fAdjField[1];
   var fAdjVal=useState(0);var iFAdjV=fAdjVal[0];var setFAdjV=fAdjVal[1];
@@ -5269,12 +5210,12 @@ function AdminAnnotationsPanel(props){
   var fNote=useState("");var iFNote=fNote[0];var setFNote=fNote[1];
 
   function resetForm(){
-    setFSev("warning");setFDay(-1);setFMsg("");setFAdjF("general");setFAdjV(0);setFShowNote(false);setFNote("");setEditIdx(null);
+    setFSev("warning");setFDays(new Set([-1]));setFMsg("");setFAdjF("general");setFAdjV(0);setFShowNote(false);setFNote("");setEditIdx(null);
   }
 
   function loadEdit(ann,idx){
     setFSev(ann.severity||"warning");
-    setFDay(ann.dayIndex!=null?ann.dayIndex:-1);
+    setFDays(new Set(ann.dayIndices&&ann.dayIndices.length?ann.dayIndices:(ann.dayIndex!=null&&ann.dayIndex>=0?[ann.dayIndex]:[-1])));
     setFMsg(ann.message||"");
     setFAdjF(ann.adjustField||"general");
     setFAdjV(ann.adjustValue||0);
@@ -5290,7 +5231,7 @@ function AdminAnnotationsPanel(props){
     var key=getRegionKey(lat,lon);
     var annId=(iEditIdx!=null&&annotations[iEditIdx])?annotations[iEditIdx].id:Date.now().toString(36);
     var authorEmail=(user&&user.email)||"unknown";
-    var newAnn={id:annId,severity:iFSev,dayIndex:iFDay,message:iFMsg.trim(),adjustField:iFAdjF,adjustValue:parseFloat(iFAdjV)||0,internalNote:iFNote.trim(),locationName:locationName,regionLabel:getRegionLabel(lat,lon)||null,createdAt:new Date().toISOString(),authorEmail:authorEmail};
+    var dayIndicesArr=Array.from(iFDays);var isSingleAll=dayIndicesArr.length===1&&dayIndicesArr[0]===-1;var newAnn={id:annId,severity:iFSev,dayIndex:isSingleAll?-1:dayIndicesArr[0],dayIndices:isSingleAll?[-1]:dayIndicesArr,message:iFMsg.trim(),adjustField:iFAdjF,adjustValue:parseFloat(iFAdjV)||0,internalNote:iFNote.trim(),locationName:locationName,regionLabel:getRegionLabel(lat,lon)||null,createdAt:new Date().toISOString(),authorEmail:authorEmail};
     var updated;
     if(iEditIdx!=null){
       updated=annotations.map(function(a,i){return i===iEditIdx?newAnn:a;});
@@ -5343,7 +5284,7 @@ function AdminAnnotationsPanel(props){
       , React.createElement('div', {style:{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}, "Active annotations ("+annotations.length+")")
       , annotations.map(function(ann,i){
         var s=ANN_LEVELS[ann.severity]||ANN_LEVELS.info;
-        var dayLabel=ann.dayIndex>=0&&forecastData[ann.dayIndex]?forecastData[ann.dayIndex].date:"All days";
+        var dayIds=ann.dayIndices&&ann.dayIndices.length?ann.dayIndices:(ann.dayIndex!=null&&ann.dayIndex>=0?[ann.dayIndex]:[-1]);var dayLabel=dayIds[0]===-1?"All days":dayIds.map(function(di){return forecastData[di]?forecastData[di].date.split(" ").slice(0,2).join(" "):"?";}).join(", ");
         return React.createElement('div', {key:ann.id,style:{background:s.bg,border:"1px solid "+s.border,borderRadius:10,padding:"10px 12px",marginBottom:6,display:"flex",gap:8,alignItems:"flex-start"}}
           , React.createElement('span', {style:{fontSize:14,flexShrink:0}}, s.icon)
           , React.createElement('div', {style:{flex:1,minWidth:0}}
@@ -5380,16 +5321,17 @@ function AdminAnnotationsPanel(props){
         )
       )
 
-      // Day selector
+      // Day selector — multi-select
       , React.createElement('div', {style:{marginBottom:10}}
-        , React.createElement('div', {style:{fontSize:10,color:"#555",marginBottom:4}}, "APPLIES TO")
+        , React.createElement('div', {style:{fontSize:10,color:"#555",marginBottom:4}}, "APPLIES TO (click multiple days, or All)")
         , React.createElement('div', {style:{display:"flex",gap:4,flexWrap:"wrap"}},
-          [React.createElement('button', {key:"all",onClick:function(){setFDay(-1);},style:{padding:"4px 10px",borderRadius:8,border:"1px solid "+(iFDay===-1?"#ff7700":"rgba(255,255,255,0.08)"),background:iFDay===-1?"rgba(255,119,0,0.12)":"transparent",color:iFDay===-1?"#ff9944":"#666",fontSize:11,cursor:"pointer"}}, "All days")]
+          [React.createElement('button', {key:"all",onClick:function(){setFDays(new Set([-1]));},style:{padding:"4px 10px",borderRadius:8,border:"1px solid "+(iFDays.has(-1)?"#ff7700":"rgba(255,255,255,0.08)"),background:iFDays.has(-1)?"rgba(255,119,0,0.12)":"transparent",color:iFDays.has(-1)?"#ff9944":"#666",fontSize:11,cursor:"pointer"}}, "All days")]
           .concat((forecastData||[]).slice(0,14).map(function(d,i){
-            var on=iFDay===i;
-            return React.createElement('button', {key:i,onClick:function(){setFDay(i);},style:{padding:"4px 10px",borderRadius:8,border:"1px solid "+(on?"#ff7700":"rgba(255,255,255,0.08)"),background:on?"rgba(255,119,0,0.12)":"transparent",color:on?"#ff9944":"#666",fontSize:11,cursor:"pointer"}}, d.date.split(" ").slice(0,2).join(" "));
+            var on=iFDays.has(i);
+            return React.createElement('button', {key:i,onClick:function(){setFDays(function(prev){var next=new Set(prev);next.delete(-1);if(next.has(i)){next.delete(i);if(next.size===0)next.add(-1);}else{next.add(i);}return next;});},style:{padding:"4px 10px",borderRadius:8,border:"1px solid "+(on?"#ff7700":"rgba(255,255,255,0.08)"),background:on?"rgba(255,119,0,0.12)":"transparent",color:on?"#ff9944":"#666",fontSize:11,cursor:"pointer"}}, d.date.split(" ").slice(0,2).join(" "));
           }))
         )
+        , !iFDays.has(-1)&&iFDays.size>1&&React.createElement('div', {style:{fontSize:10,color:"#ff9944",marginTop:4}}, iFDays.size+" days selected")
       )
 
       // Message
