@@ -1805,7 +1805,7 @@ React.createElement('div', {}
 , React.createElement('div', { style: {background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 14px",marginBottom:16}}
 , React.createElement('div', { style: {fontSize:11,color:"#888",marginBottom:10,letterSpacing:2,textTransform:"uppercase"}}, "Conditions — Next 14 Days")
 , React.createElement('div', { style: {display:"flex",flexWrap:"wrap",gap:6}}
-, forecastData.slice(0,14).map(function(d,i){var isC=d.type==="confirmed",isN=d.type==="near",col=tc(d.temp);return React.createElement('div', { key: i, style: {display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"8px 6px",borderRadius:10,minWidth:46,flex:"1 1 46px",background:isC?"rgba(255,119,0,0.1)":isN?"rgba(74,159,212,0.07)":"rgba(255,255,255,0.02)",border:"1px solid "+(isC?col+"44":isN?col+"22":"rgba(255,255,255,0.06)")}}, React.createElement('div', { style: {fontSize:9,color:"#666",textAlign:"center"}}, d.date.split(" ").slice(0,2).join(" ")), React.createElement('div', { style: {fontSize:20}}, d.condition), React.createElement('div', { style: {fontSize:12,fontWeight:"bold",color:col}}, fmtTemp(d.temp,u.temp)), React.createElement('div', { style: {fontSize:10,color:"#5a7a5a"}}, fmtTemp(d.low,u.temp)), d.rain>=40&&React.createElement('div', { style: {fontSize:9,color:rc(d.rain)}}, d.rain, "%"));})
+, forecastData.slice(0,15).map(function(d,i){var isC=d.type==="confirmed",isN=d.type==="near",col=tc(d.temp);return React.createElement('div', { key: i, style: {display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"8px 6px",borderRadius:10,minWidth:46,flex:"1 1 46px",background:isC?"rgba(255,119,0,0.1)":isN?"rgba(74,159,212,0.07)":"rgba(255,255,255,0.02)",border:"1px solid "+(isC?col+"44":isN?col+"22":"rgba(255,255,255,0.06)")}}, React.createElement('div', { style: {fontSize:9,color:"#666",textAlign:"center"}}, d.date.split(" ").slice(0,2).join(" ")), React.createElement('div', { style: {fontSize:20}}, d.condition), React.createElement('div', { style: {fontSize:12,fontWeight:"bold",color:col}}, fmtTemp(d.temp,u.temp)), React.createElement('div', { style: {fontSize:10,color:"#5a7a5a"}}, fmtTemp(d.low,u.temp)), d.rain>=40&&React.createElement('div', { style: {fontSize:9,color:rc(d.rain)}}, d.rain, "%"));})
 )
 )
 , React.createElement('div', { style: {display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8}}
@@ -3107,7 +3107,7 @@ var drilling=drillingWindow(soilT,day);
 var blight=blightRisk(days.slice(iDayIdx,iDayIdx+3));
 var hutton=huttonRisk(days.slice(iDayIdx,iDayIdx+2));
 var gddAccum=0;
-var gddByDay=days.slice(0,14).map(function(d){var g=calcGDD(d.temp,d.low,GDD_BASE[iFarm]);gddAccum+=g;return {date:d.date,gdd:g,accum:+gddAccum.toFixed(1)};});
+var gddByDay=days.slice(0,15).map(function(d){var g=calcGDD(d.temp,d.low,GDD_BASE[iFarm]);gddAccum+=g;return {date:d.date,gdd:g,accum:+gddAccum.toFixed(1)};});
 var month=new Date().getMonth();
 var calRecs={
 arable:[{months:[8,9,10],task:"🌱 Autumn drilling window",check:drilling.status==="go"?"Open":"Closed",color:drilling.color},{months:[3,4],task:"🌱 Spring drilling / topdressing",check:drilling.status==="go"?"Open":"Closed",color:drilling.color},{months:[4,5,6],task:"💊 Fungicide/herbicide spraying",check:spray.status==="go"?"Open":"Closed",color:spray.color},{months:[7,8],task:"🌾 Harvest window",check:harvest.status==="go"?"Open":"Closed",color:harvest.color}],
@@ -3176,11 +3176,11 @@ React.createElement('div', { style:sectionSty}
 , React.createElement('div', { style:{fontSize:11,color:"#aaddaa",marginBottom:8,fontWeight:"bold"}}, "📊 Season Summary (14-day forecast)")
 , React.createElement('div', { style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}
 , React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Total GDD: ", React.createElement('span', { style:{color:"#aaddaa",fontWeight:"bold"}}, gddByDay.reduce(function(a,b){return a+b.gdd;},0).toFixed(1)))
-, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Total ET0: ", React.createElement('span', { style:{color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,14).reduce(function(a,d){return a+calcET0(d.temp,d.low,d.windMph,d.humidity,d.uvMax||5);},0).toFixed(1), "mm"))
-, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Frost days: ", React.createElement('span', { style:{color:"#88ccff",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return d.low<=0;}).length))
-, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Spray days: ", React.createElement('span', { style:{color:"#88cc66",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return sprayWindow(d).status==="go";}).length))
-, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Harvest days: ", React.createElement('span', { style:{color:"#ffcc44",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return harvestWindow(d).status==="go";}).length))
-, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Rain days: ", React.createElement('span', { style:{color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,14).filter(function(d){return d.rainMm>=2;}).length))
+, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Total ET0: ", React.createElement('span', { style:{color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,15).reduce(function(a,d){return a+calcET0(d.temp,d.low,d.windMph,d.humidity,d.uvMax||5);},0).toFixed(1), "mm"))
+, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Frost days: ", React.createElement('span', { style:{color:"#88ccff",fontWeight:"bold"}}, days.slice(0,15).filter(function(d){return d.low<=0;}).length))
+, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Spray days: ", React.createElement('span', { style:{color:"#88cc66",fontWeight:"bold"}}, days.slice(0,15).filter(function(d){return sprayWindow(d).status==="go";}).length))
+, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Harvest days: ", React.createElement('span', { style:{color:"#ffcc44",fontWeight:"bold"}}, days.slice(0,15).filter(function(d){return harvestWindow(d).status==="go";}).length))
+, React.createElement('div', { style:{fontSize:11,color:"#9a8c7a"}}, "Rain days: ", React.createElement('span', { style:{color:"#4a9fd4",fontWeight:"bold"}}, days.slice(0,15).filter(function(d){return d.rainMm>=2;}).length))
 )
 )
 ))
@@ -5326,7 +5326,7 @@ function AdminAnnotationsPanel(props){
         , React.createElement('div', {style:{fontSize:10,color:"#555",marginBottom:4}}, "APPLIES TO (click multiple days, or All)")
         , React.createElement('div', {style:{display:"flex",gap:4,flexWrap:"wrap"}},
           [React.createElement('button', {key:"all",onClick:function(){setFDays(new Set([-1]));},style:{padding:"4px 10px",borderRadius:8,border:"1px solid "+(iFDays.has(-1)?"#ff7700":"rgba(255,255,255,0.08)"),background:iFDays.has(-1)?"rgba(255,119,0,0.12)":"transparent",color:iFDays.has(-1)?"#ff9944":"#666",fontSize:11,cursor:"pointer"}}, "All days")]
-          .concat((forecastData||[]).slice(0,14).map(function(d,i){
+          .concat((forecastData||[]).slice(0,15).map(function(d,i){
             var on=iFDays.has(i);
             return React.createElement('button', {key:i,onClick:function(){setFDays(function(prev){var next=new Set(prev);next.delete(-1);if(next.has(i)){next.delete(i);if(next.size===0)next.add(-1);}else{next.add(i);}return next;});},style:{padding:"4px 10px",borderRadius:8,border:"1px solid "+(on?"#ff7700":"rgba(255,255,255,0.08)"),background:on?"rgba(255,119,0,0.12)":"transparent",color:on?"#ff9944":"#666",fontSize:11,cursor:"pointer"}}, d.date.split(" ").slice(0,2).join(" "));
           }))
@@ -5463,15 +5463,24 @@ fbDb.collection("users").doc(u.uid).get().then(function(doc){if(doc.exists){var 
 });
 return unsub;
 },[]);
-// Live-listen to admin annotations so all users see changes instantly
+// Live-listen to admin annotations — works for logged-in and guest users.
+// If Firestore rules block unauthenticated reads, signs in anonymously and retries.
 useEffect(function(){
   if(!iLat||!iLon)return;
   var key=getRegionKey(iLat,iLon);
-  var unsubscribe=fbDb.collection("adminAnnotations").doc(key).onSnapshot(function(doc){
-    if(doc.exists&&doc.data().annotations){setAnnotations(doc.data().annotations);}
-    else{setAnnotations([]);}
-  },function(){setAnnotations([]);});
-  return function(){unsubscribe();};
+  var unsub=null;
+  function listen(){
+    unsub=fbDb.collection("adminAnnotations").doc(key).onSnapshot(function(doc){
+      if(doc.exists&&doc.data().annotations){setAnnotations(doc.data().annotations);}
+      else{setAnnotations([]);}
+    },function(e){
+      if(e.code==="permission-denied"||e.code==="unauthenticated"){
+        firebase.auth().signInAnonymously().then(listen).catch(function(){setAnnotations([]);});
+      } else {setAnnotations([]);}
+    });
+  }
+  listen();
+  return function(){if(unsub)unsub();};
 },[iLat,iLon]);
 useEffect(function(){
 var params=new URLSearchParams(window.location.search);
@@ -5547,7 +5556,7 @@ return {avgHigh:Math.round(avgMax*10)/10,avgLow:Math.round(avgMin*10)/10,sampleS
 async function fetchWeather(place){
 setSearching(true);setErr("");setClimAvg(null);
 try{
-var wR=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+place.latitude+"&longitude="+place.longitude+"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,precipitation_hours,windspeed_10m_max,windgusts_10m_max,relative_humidity_2m_mean,pressure_msl_mean,weathercode,uv_index_max,snowfall_sum&hourly=temperature_2m,weathercode,precipitation_probability,precipitation,snowfall,rain,windspeed_10m,windgusts_10m,relativehumidity_2m,pressure_msl,cloudcover,uv_index,dewpoint_2m,visibility,freezing_level_height&minutely_15=precipitation,rain,showers,weather_code&past_minutely_15=4&forecast_minutely_15=8&timezone=auto&forecast_days=13");
+var wR=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+place.latitude+"&longitude="+place.longitude+"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,precipitation_hours,windspeed_10m_max,windgusts_10m_max,relative_humidity_2m_mean,pressure_msl_mean,weathercode,uv_index_max,snowfall_sum&hourly=temperature_2m,weathercode,precipitation_probability,precipitation,snowfall,rain,windspeed_10m,windgusts_10m,relativehumidity_2m,pressure_msl,cloudcover,uv_index,dewpoint_2m,visibility,freezing_level_height&minutely_15=precipitation,rain,showers,weather_code&past_minutely_15=4&forecast_minutely_15=8&timezone=auto&forecast_days=16");
 // Fetch CAMS UV in parallel — CAMS uses a proper atmospheric photochemistry model
 // via Copernicus and correctly reports UV 12-20 at the equator, unlike the GFS-derived
 // UV in the main forecast API which is capped ~9 due to a simplified UVB scaling formula.
