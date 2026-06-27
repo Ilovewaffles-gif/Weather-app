@@ -986,7 +986,7 @@ React.createElement('div', { id:"daycard-"+i, onClick: function(){setSel(sel===i
 , React.createElement('span', { style: {fontSize:11,color:hwCol,fontWeight:"bold"}}, "up to ", fmtTemp(hw.trueFeelHigh,u.temp))
 )
 , (function(){
-  var dayAnns=annotations.filter(function(a){return a.dayIndex<0||a.dayIndex===i;});
+  var dayAnns=annotations.filter(function(a){var _ids=a.dayIndices&&a.dayIndices.length?a.dayIndices:[a.dayIndex!=null?a.dayIndex:-1];return _ids.indexOf(-1)>=0||_ids.indexOf(i)>=0;});
   if(!dayAnns.length)return null;
   var top=dayAnns[0];
   var s=ANN_LEVELS[top.severity]||ANN_LEVELS.info;
@@ -1017,7 +1017,7 @@ React.createElement('div', { style: {fontSize:11,color:"#9a8c7a",marginTop:6,bor
 , React.createElement('button', { onClick: function(e){e.stopPropagation();setDetailView("daily");}, style: {padding:"3px 10px",fontSize:11,borderRadius:10,background:detailView==="daily"?"#ff7700":"rgba(255,255,255,0.07)",color:detailView==="daily"?"#fff":"#aaa",border:"none",cursor:"pointer"}}, "Daily Summary" )
 , React.createElement('button', { onClick: function(e){e.stopPropagation();setDetailView("periods");}, style: {padding:"3px 10px",fontSize:11,borderRadius:10,background:detailView==="periods"?"#ff7700":"rgba(255,255,255,0.07)",color:detailView==="periods"?"#fff":"#aaa",border:"none",cursor:"pointer"}}, "Morning / Afternoon / Evening" )
 , hw.level!=="none"&&React.createElement('button', { onClick: function(e){e.stopPropagation();setDetailView("heatwave");}, style: {padding:"3px 10px",fontSize:11,borderRadius:10,background:detailView==="heatwave"?hwCol:"rgba(255,255,255,0.07)",color:detailView==="heatwave"?"#1a0a00":"#aaa",border:"none",cursor:"pointer"}}, "🔥 Heat Risk" )
-, (function(){var dayAnns=annotations.filter(function(a){return a.dayIndex<0||a.dayIndex===i;});return dayAnns.length>0&&React.createElement('button', {onClick:function(e){e.stopPropagation();setDetailView("editorial");},style:{padding:"3px 10px",fontSize:11,borderRadius:10,background:detailView==="editorial"?"#4a9fd4":"rgba(255,255,255,0.07)",color:detailView==="editorial"?"#fff":"#aaa",border:"none",cursor:"pointer"}}, "📋 Editorial ("+dayAnns.length+")");})()
+, (function(){var dayAnns=annotations.filter(function(a){var _ids=a.dayIndices&&a.dayIndices.length?a.dayIndices:[a.dayIndex!=null?a.dayIndex:-1];return _ids.indexOf(-1)>=0||_ids.indexOf(i)>=0;});return dayAnns.length>0&&React.createElement('button', {onClick:function(e){e.stopPropagation();setDetailView("editorial");},style:{padding:"3px 10px",fontSize:11,borderRadius:10,background:detailView==="editorial"?"#4a9fd4":"rgba(255,255,255,0.07)",color:detailView==="editorial"?"#fff":"#aaa",border:"none",cursor:"pointer"}}, "📋 Editorial ("+dayAnns.length+")");})()
 )
 , detailView==="daily"&&(
 React.createElement('div', { style: {display:"flex",flexDirection:"column",gap:3}}
@@ -1053,7 +1053,7 @@ React.createElement('div', { style: {display:"flex",flexDirection:"column",gap:8
 )
 )
 , detailView==="editorial"&&(function(){
-  var dayAnns=annotations.filter(function(a){return a.dayIndex<0||a.dayIndex===i;});
+  var dayAnns=annotations.filter(function(a){var _ids=a.dayIndices&&a.dayIndices.length?a.dayIndices:[a.dayIndex!=null?a.dayIndex:-1];return _ids.indexOf(-1)>=0||_ids.indexOf(i)>=0;});
   return React.createElement('div', {style:{display:"flex",flexDirection:"column",gap:6}}
     , React.createElement('div', {style:{fontSize:10,color:"#4a9fd4",letterSpacing:1,textTransform:"uppercase",marginBottom:4}}, "Editorial Annotations")
     , React.createElement(AdminAnnotationsBanner, {annotations:dayAnns,forecastData:forecastData,dayIndex:i})
